@@ -9,7 +9,7 @@ get_catchment_edges_terms(
   nexus_prefix = "nex-",
   terminal_nexus_prefix = "tnex-",
   catchment_prefix = "cat-",
-  cutoff = 100000000
+  term_cut = 1e+09
 )
 }
 \arguments{
@@ -21,7 +21,7 @@ get_catchment_edges_terms(
 
 \item{catchment_prefix}{character prefix for catchment IDs}
 
-\item{cutoff}{terminal IDs begin above a defiend threshold}
+\item{term_cut}{terminal IDs begin above a defiend threshold}
 }
 \value{
 data.frame

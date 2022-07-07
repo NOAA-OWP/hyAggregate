@@ -173,15 +173,16 @@ geos_union_linestring_hyaggregate = function (lines, ID)  {
 #' @param ID the column name over which to union geometries
 #' @return sf object
 #' @export
-#' @importFrom terra aggregate vect
+#' @importFrom terra aggregate vect makeValid
 #' @importFrom dplyr select
 #' @importFrom sf st_as_sf st_collection_extract st_geometry_type st_make_valid
 
 geos_union_polygon_hyaggregate = function(poly, ID) {
-  poly = aggregate(vect(poly), by = eval(ID)) %>%
+
+  poly = makeValid(vect(poly)) %>%
+    aggregate(by = eval(ID)) %>%
     st_as_sf() %>%
-    select(!!ID) %>%
-    st_make_valid()
+    select(!!ID)
 
   if (any(grepl("COLLECTION",  st_geometry_type(poly)))) {
     poly = st_collection_extract(poly, "POLYGON")
@@ -271,7 +272,7 @@ cs_group                   <- function(a, athres) {
 #' @importFrom dplyr mutate select left_join
 #' @importFrom sf st_drop_geometry
 
-check_network_validity     <- function(flowpaths, cat, term_cut = 100000000, check = TRUE){
+check_network_validity     <- function(flowpaths, cat, term_cut = 1e9, check = TRUE){
 
   flowpaths  = flowpaths[!duplicated(flowpaths),]
   cat = cat[!duplicated(cat),]
@@ -339,7 +340,7 @@ network_is_dag = function(fl, ID = "id", toID = "toid"){
 #' @importFrom nhdplusTools get_node rename_geometry
 #' @importFrom sf st_intersects st_drop_geometry st_as_sf
 
-get_nexus_locations = function(fp, term_cut =  100000000){
+get_nexus_locations = function(fp, term_cut =  1e9){
 
   fp$toid = ifelse(is.na(fp$toid), 0, fp$toid)
 

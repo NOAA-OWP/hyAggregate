@@ -51,12 +51,21 @@ aggregate_cfe_noahowp = function(gpkg = NULL,
                                  flowline_name  = "aggregate_flowpaths",
                                  ID = "id",
                                  precision = 9,
-                                 add_to_gpkg = TRUE) {
+                                 add_to_gpkg = TRUE,
+                                 overwrite = FALSE) {
+
+  lyr = "cfe_noahowp_attributes"
 
   .SD <- . <- .data <-  NULL
 
   if(is.null(gpkg)){
     stop('gpkg cannot be missing', call. = FALSE)
+  }
+
+  if(!overwrite){
+   if(lyr %in% st_layers(gpkg)$name){
+     return(gpkg)
+   }
   }
 
   cats = read_sf(gpkg, catchment_name)
@@ -65,11 +74,11 @@ aggregate_cfe_noahowp = function(gpkg = NULL,
     stop("dir cannot be NULL")
   }
 
+  log_info("Getting NWM grid data")
   data = get_nwm_grids(dir = dir, spatial = TRUE)
 
   log_info("Building weighting grid from ", terra::sources(data)[1])
-
-  nwm_w_1000m = zonal::weight_grid(data, cats,  ID = ID)
+  nwm_w_1000m = weight_grid(data, cats,  ID = ID, progress = FALSE)
 
   log_success("Done!")
   soils_exe = list()
@@ -179,7 +188,7 @@ aggregate_cfe_noahowp = function(gpkg = NULL,
   names(traits) = gsub("_Time=1", "", names(traits))
 
   if(add_to_gpkg){
-    write_sf(traits, gpkg, "cfe_noahowp_attributes")
+    write_sf(traits, gpkg, lyr)
     return(gpkg)
   } else {
     return(traits)

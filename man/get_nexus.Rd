@@ -6,7 +6,7 @@
 \usage{
 get_nexus(
   fp,
-  term_cut = 1000000000,
+  term_cut = 1e+09,
   nexus_prefix = "nex-",
   terminal_nexus_prefix = "tnx-"
 )

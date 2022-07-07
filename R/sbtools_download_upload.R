@@ -34,6 +34,7 @@ find_pu = function(location, pu = "vpu"){ get_boundaries(pu)[st_transform(locati
 #' @importFrom dplyr filter slice_min
 #' @importFrom jsonlite fromJSON
 #' @importFrom sbtools item_file_download
+#' @importFrom httr GET write_disk
 
 get_reference_fabric = function(VPU = "01",
                                 type = "refactored",
@@ -72,9 +73,11 @@ get_reference_fabric = function(VPU = "01",
         destinations = out,
         overwrite_file = TRUE
       )}, error = function(e){
-        message("need authentication... put this in a browser to download (or authenticate sbtools):\n\n", find$url)
+        # message("need authentication... put this in a browser to download (or authenticate sbtools):\n\n", find$url)
+        httr::GET(find$url, httr::write_disk(out, overwrite = TRUE))
       })
   }
+
 
   if (.getExtension(out) == "zip") {
     unzip(out, exdir = dir)

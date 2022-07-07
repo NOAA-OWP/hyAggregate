@@ -4,7 +4,7 @@
 #' @param nexus_prefix  character prefix for nexus IDs
 #' @param terminal_nexus_prefix character prefix for terminal nexus IDs
 #' @param catchment_prefix character prefix for catchment IDs
-#' @param cutoff terminal IDs begin above a defiend threshold
+#' @param term_cut terminal IDs begin above a defiend threshold
 #' @return data.frame
 #' @export
 #' @importFrom sf st_drop_geometry
@@ -14,7 +14,7 @@ get_catchment_edges_terms = function(flowpaths,
                                      nexus_prefix = "nex-",
                                      terminal_nexus_prefix = "tnex-",
                                      catchment_prefix = "cat-",
-                                     cutoff = 100000000) {
+                                     term_cut = 1e9) {
 
   fline = select(st_drop_geometry(flowpaths), id, toid)
 
@@ -25,7 +25,7 @@ get_catchment_edges_terms = function(flowpaths,
     select(id = .data$id, toid = .data$toid) %>%
     mutate(id = paste0(catchment_prefix, .data$id),
            toid = paste0(
-             ifelse(.data$toid > cutoff, terminal_nexus_prefix, nexus_prefix),
+             ifelse(.data$toid > term_cut, terminal_nexus_prefix, nexus_prefix),
              .data$toid
            ))
 
@@ -33,7 +33,7 @@ get_catchment_edges_terms = function(flowpaths,
     left_join(mutate(select(fline, id), toid = id), by = "id") %>%
     mutate(toid = ifelse(is.na(.data$toid), 0, .data$toid)) %>%
     mutate(id =  paste0(
-      ifelse(.data$id > cutoff, terminal_nexus_prefix, nexus_prefix),
+      ifelse(.data$id > term_cut, terminal_nexus_prefix, nexus_prefix),
       .data$id
     ),
     toid = paste0(catchment_prefix, .data$toid))
@@ -148,7 +148,7 @@ get_nexus = function(fp, term_cut = 1e9, nexus_prefix = "nex-", terminal_nexus_p
 #' @param flowpaths  sf data.frame containing hyRefactor or hyAggregate output.
 #' @param wb_prefix  character prefix for waterbody IDs
 #' @param terminal_wb_prefix character prefix for terminal waterbody IDs
-#' @param cutoff terminal IDs begin above a defined threshold
+#' @param term_cut terminal IDs begin above a defined threshold
 #' @return data.frame
 #' @export
 #' @importFrom sf st_drop_geometry
@@ -157,7 +157,7 @@ get_nexus = function(fp, term_cut = 1e9, nexus_prefix = "nex-", terminal_nexus_p
 get_waterbody_edges_terms = function(flowpaths,
                                      wb_prefix = "wb-",
                                      terminal_wb_prefix = "twb-",
-                                     cutoff = 100000000) {
+                                     term_cut = 1e9) {
 
   fline = select(st_drop_geometry(flowpaths), id, toid)
 
@@ -166,11 +166,11 @@ get_waterbody_edges_terms = function(flowpaths,
 
   fline %>% select(.data$id, .data$toid) %>%
     mutate(id = paste0(
-      ifelse(.data$id > cutoff, terminal_wb_prefix, wb_prefix),
+      ifelse(.data$id > term_cut, terminal_wb_prefix, wb_prefix),
       .data$id
     ),
     toid = paste0(
-      ifelse(.data$toid > cutoff, terminal_wb_prefix, wb_prefix),
+      ifelse(.data$toid > term_cut, terminal_wb_prefix, wb_prefix),
       .data$toid
     ))
 }

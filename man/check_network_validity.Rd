@@ -5,7 +5,7 @@
 \title{Check Network Validity
 \strong{INTERNAL} function that validates a flowpath and catchment network}
 \usage{
-check_network_validity(flowpaths, cat, term_cut = 100000000, check = TRUE)
+check_network_validity(flowpaths, cat, term_cut = 1e+09, check = TRUE)
 }
 \arguments{
 \item{flowpaths}{a LINESTRING \code{sf} flowpaths object}

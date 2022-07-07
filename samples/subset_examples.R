@@ -22,7 +22,9 @@ g01 = get_reference_fabric(VPU = VPU, dir = "data") |>
 g01 = glue::glue("data/ngen_{VPU}.gpkg")
 
 ## Example 1: Subset based on ID:
-set = subset_network(g01, 'wb-16354')
+set = subset_network(gpkg, origin = 'wb-16354')
+set = subset_network(gpkg, origin = 'wb-16354',
+                      export_gpkg = "data/test.gpkg")
 
 mapview::mapview(set)
 

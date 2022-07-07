@@ -30,7 +30,6 @@ Imports:
     sys,
     terra,
     tidyr,
-    tools,
     units,
     zonal
 Remotes: 

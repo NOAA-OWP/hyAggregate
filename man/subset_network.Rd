@@ -4,15 +4,30 @@
 \alias{subset_network}
 \title{Subset the upstream protion of a network}
 \usage{
-subset_network(gpkg, origin, mainstem = FALSE)
+subset_network(
+  gpkg,
+  origin,
+  flowpath_edgelist = "flowpath_edge_list",
+  flowpath_name = "aggregate_flowpaths",
+  catchment_name = "aggregate_divides",
+  mainstem = FALSE,
+  export_gpkg = NULL
+)
 }
 \arguments{
 \item{gpkg}{path to a hydrofabric}
 
-\item{origin}{the ID to begin navigatipn}
-}
-\value{
-mainstem should only the mainstem flowpath be retruned (default = FALSE)
+\item{origin}{the ID to begin navigation}
+
+\item{flowpath_edgelist}{layer name of flowpath edgelist in gpkg}
+
+\item{flowpath_name}{layer name of flowpaths in gpkg}
+
+\item{catchment_name}{layer name of cathcments in gpkg}
+
+\item{mainstem}{should only the mainstem flowpath be retruned (default = FALSE)}
+
+\item{export_gpkg}{a path to write the data to. If NULL a list is returned}
 }
 \description{
 Subset the upstream protion of a network

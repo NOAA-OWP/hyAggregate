@@ -8,7 +8,7 @@ get_waterbody_edges_terms(
   flowpaths,
   wb_prefix = "wb-",
   terminal_wb_prefix = "twb-",
-  cutoff = 100000000
+  term_cut = 1e+09
 )
 }
 \arguments{
@@ -18,7 +18,7 @@ get_waterbody_edges_terms(
 
 \item{terminal_wb_prefix}{character prefix for terminal waterbody IDs}
 
-\item{cutoff}{terminal IDs begin above a defined threshold}
+\item{term_cut}{terminal IDs begin above a defined threshold}
 }
 \value{
 data.frame
