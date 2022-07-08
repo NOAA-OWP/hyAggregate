@@ -107,16 +107,16 @@ collapse_network_inward =  function(network_list,
 #' @importFrom logger log_success log_info
 
 aggregate_network_to_distribution = function(gf = NULL,
-                             flowpaths  = NULL,
-                             catchments = NULL,
-                             ideal_size_sqkm = 10,
-                             min_length_km = 1,
-                             min_area_sqkm  = 3,
-                             outfile = NULL,
-                             verbose = TRUE,
-                             overwrite = FALSE,
-                             nexus_topology = TRUE,
-                             routelink_path = NULL) {
+                                             flowpaths  = NULL,
+                                             catchments = NULL,
+                                             ideal_size_sqkm = 10,
+                                             min_length_km = 1,
+                                             min_area_sqkm  = 3,
+                                             outfile = NULL,
+                                             verbose = TRUE,
+                                             overwrite = FALSE,
+                                             nexus_topology = TRUE,
+                                             routelink_path = NULL) {
 
   if (!is.null(gf)) {
 
@@ -145,27 +145,26 @@ aggregate_network_to_distribution = function(gf = NULL,
     }, error = function(e){
       st_transform(read_sf(gf, "divides"), 5070)
     })
+  }
 
-    # Remove non-associated flowpaths and catchments
-      #fl <- filter(fl, ID %in% catchments$ID)
-      #catchments <- filter(catchments, ID %in% fl$ID)
-    # Create a network list and check in DAG and connected
-    network_list <- check_network_validity(flowpaths = flowpaths, cat = catchments)
+  # Create a network list and check if DAG and connected
+  network_list <- check_network_validity(flowpaths = flowpaths, cat = catchments)
 
-  } else {
-    # Create a network list and check if DAG and connected
-    network_list <- check_network_validity(flowpaths = flowpaths, cat = catchments)
+  prep_for_ngen = function(network_list){
+    names(network_list$flowpaths)  = tolower(names(network_list$flowpaths))
+    names(network_list$catchments) = tolower(names(network_list$catchments))
+
+    # Add a hydrosequence to the flowpaths
+    network_list$flowpaths = add_hydroseq(flowpaths = network_list$flowpaths)
+
+    # Add area and length measures to the network list
+    network_list = add_measures(network_list$flowpaths, network_list$catchments)
+
+    network_list
   }
 
   # Set all names to lower case!
-  names(network_list$flowpaths)  = tolower(names(network_list$flowpaths))
-  names(network_list$catchments) = tolower(names(network_list$catchments))
-
-  # Add a hydrosequence to the flowpaths
-  network_list$flowpaths = add_hydroseq(flowpaths = network_list$flowpaths)
-
-  # Add area and length measures to the network list
-  network_list = add_measures(network_list$flowpaths, network_list$catchments)
+  network_list = prep_for_ngen(network_list)
 
   # Perform first aggregation step!
   network_list = aggregate_along_mainstems(network_list,
@@ -173,6 +172,8 @@ aggregate_network_to_distribution = function(gf = NULL,
                                            min_area_sqkm,
                                            min_length_km,
                                            verbose = verbose)
+
+  network_list = prep_for_ngen(network_list)
 
   if (verbose) {
     log_success("Aggregated Along mainstem(s).")
@@ -332,7 +333,7 @@ aggregate_along_mainstems = function(network_list,
 
   v = aggregate_sets(
     flowpaths  = filter(network_list$flowpaths,  id %in% index_table$id),
-    cat = filter(network_list$catchments, id %in% index_table$id),
+    cat        = filter(network_list$catchments, id %in% index_table$id),
     index_table
   )
 

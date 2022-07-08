@@ -30,6 +30,28 @@ write_ngen_dir = function(gpkg,
                           flowpath_name  = "aggregate_flowpaths",
                           export_shapefiles = FALSE){
 
+  if(!layer_exists(gpkg, catchment_name)){
+    stop("Need ", catchment_name, " in gpkg", call. = FALSE)
+  }
+
+  if(!layer_exists(gpkg, flowpath_name)){
+    stop("Need ", flowpath_name, " in gpkg", call. = FALSE)
+  }
+
+  if(!layer_exists(gpkg, "nexus")){
+    stop("Need ", "nexus", " in gpkg", call. = FALSE)
+  }
+
+
+  if(!layer_exists(gpkg, "flowpath_edge_list")){
+    stop("Need ", "flowpath_edge_list", " in gpkg", call. = FALSE)
+  }
+
+
+  if(!all(layer_exists(gpkg, "flowpath_attributes") |  layer_exists(gpkg, "flowpath_params"))){
+    stop("Need ", "flowpath_attributes", " in gpkg", call. = FALSE)
+  }
+
   dir = strsplit(gpkg, "\\.")[[1]][1]
   dir.create(dir, showWarnings = FALSE, recursive = TRUE)
   log_info("Writing to: {dir}")

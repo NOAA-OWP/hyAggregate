@@ -1,6 +1,25 @@
 #origin = 'wb-16354'
 #gpkg = '/Users/mjohnson/github/hyAggregate/data/ngen_01.gpkg'
 
+#' Check if geopackage layer exists
+#' @param gpkg path to geopackage
+#' @param name layer name
+#' @return boolean
+#' @export
+
+layer_exists = function(gpkg, name){
+
+  if(!file.exists(gpkg)){ return(FALSE) }
+
+  n = sf::st_layers(gpkg)$name
+
+  if(name %in% n){
+    return(TRUE)
+  } else {
+    return(FALSE)
+  }
+}
+
 
 #' Find ID from location
 #' @param gpkg path to a hydrofabric
@@ -33,28 +52,44 @@ subset_network = function(gpkg,
                           flowpath_name     = 'aggregate_flowpaths',
                           catchment_name    = 'aggregate_divides',
                           mainstem = FALSE,
+                          attribute_layers = NULL,
                           export_gpkg = NULL) {
+
   trace = get_sorted(read_sf(gpkg, flowpath_edgelist),
                      split = TRUE,
                      outlets = origin)
 
-  flowpaths = filter(read_sf(gpkg,  flowpath_name),  id %in% trace$id)
-  divides   = filter(read_sf(gpkg,  catchment_name),
-                     id %in% flowpaths$realized_catchment)
+  ll = list()
+
+  ll[['flowpaths']] = filter(read_sf(gpkg,  flowpath_name),  id %in% trace$id)
+
+  ll[['divides']]   = filter(read_sf(gpkg,  catchment_name),
+                     id %in% ll$flowpaths$realized_catchment)
 
   if ("nexus" %in% st_layers(gpkg)$name) {
-    nexus     = filter(read_sf(gpkg,  "nexus"), id %in% divides$toid)
+    ll[['nexus']]     = filter(read_sf(gpkg,  "nexus"), id %in% ll$divides$toid)
   }
-  nexus     = filter(read_sf(gpkg,  "nexus"), id %in% divides$toid)
 
   if (mainstem) {
-    tmp = filter(flowpaths, id == origin)
-    flowpaths = filter(flowpaths, main_id == tmp$main_id)
+    tmp = filter(ll$flowpaths, id == origin)
+    ll[['flowpaths']] = filter(ll[['flowpaths']], main_id == tmp$main_id)
   }
 
-  ll = list(flowpaths = flowpaths,
-            divides = divides,
-            nexus = nexus)
+  ll$flowpath_edge_list =  get_catchment_edges_terms(ll$flowpaths, catchment_prefix = 'wb-')
+
+  if(!is.null(attribute_layers)){
+    for(i in 1:length(attribute_layers)){
+      if(!layer_exists(gpkg, attribute_layers[i])){
+        tmp = read_sf(gpkg, attribute_layers[i])
+        ll[[attribute_layers[i]]] = filter(tmp, id %in% divides$id )
+      }
+    }
+  }
+
+  if(layer_exists(gpkg, "flowpath_attributes")){
+    tmp = read_sf(gpkg, "flowpath_attributes")
+    ll[["flowpath_attributes"]] = filter(tmp, id %in% ll$flowpaths$id )
+  }
 
   if (!is.null(export_gpkg)) {
     if (length(ll) > 0) {
@@ -66,14 +101,10 @@ subset_network = function(gpkg,
       }
     }
 
-    return(gpkg)
+    return(export_gpkg)
   } else {
     return(ll)
   }
 }
 
-#pt = data.frame(x = 2141136, y = 2824888) |>
-#   st_as_sf(coords = c("x", "y"), crs = 5070)
-#
-# set = subset_network(gpkg, find_origin(gpkg, pt))
-# mapview::mapview(set)  +pt
+
