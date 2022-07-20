@@ -1,46 +1,47 @@
-library(mapview)
+library(hyAggregate)
 library(sf)
-library(mapview)
 
-VPU = "01"
-
-#Download Reference Refactored Fabric for VPU
-g01 = get_reference_fabric(VPU = VPU, dir = "data") |>
-  # Apply default aggregation
-    aggregate_network_to_distribution(
-      outfile        = glue::glue("data/ngen_{VPU}.gpkg"),
-      routelink_path = get_routelink_path(),
-      overwrite      = FALSE
-    ) |>
-  # Add cfe and noahowp parameters to gpkg
-    aggregate_cfe_noahowp(dir = '/Volumes/Transcend/nwmCONUS-v216/', add_to_gpkg = TRUE) |>
-  # Write ngen file set w/ shapefiles
-    write_ngen_dir(export_shapefiles = TRUE)
-
-
-
-g01 = glue::glue("data/ngen_{VPU}.gpkg")
+gpkg = '/Volumes/Transcend/ngen/CONUS-hydrofabric/ngen/ngen_12.gpkg'
 
 ## Example 1: Subset based on ID:
-set = subset_network(gpkg, origin = 'wb-16354')
-set = subset_network(gpkg, origin = 'wb-16354',
-                      export_gpkg = "data/test.gpkg")
+set = subset_network(gpkg,
+                     origin = 'wb-10977')
+sapply(set, nrow)
 
-mapview::mapview(set)
+# Write out subset based on ID to gpkg:
 
-## Example 2: Subset based on ID and find mainstem:
-set = subset_network(g01, 'wb-16354', mainstem = TRUE)
+set = subset_network(gpkg,
+                     origin = 'wb-10977',
+                     export_gpkg = "data/test.gpkg")
 
-mapview::mapview(set)
+st_layers("data/test.gpkg")
 
-## Example 3: Subset based on location:
-pt = data.frame(x = 2141136, y = 2824888) |>
-  st_as_sf(coords = c("x", "y"), crs = 5070)
-
-set = subset_network(g01, find_origin(gpkg, pt))
-
-mapview::mapview(set) + pt
-
+#Subset based on ID and find mainstem only:
+set = subset_network(gpkg,
+                     origin = 'wb-10977',
+                     mainstem = TRUE)
+sapply(set, nrow)
 
 
+## Example 2: Subset based on location:
+pt = data.frame(x = -275151, y = 845494) |>
 
+set = subset_network(gpkg, find_origin(gpkg, pt))
+sapply(set, nrow)
+
+st_layers(gpkg)
+
+### Subset attribtues sets:
+
+set = subset_network(gpkg,
+                     find_origin(gpkg, pt),
+                     attribute_layers = "cfe_noahowp_attributes")
+sapply(set, nrow)
+
+
+
+
+
+
+
+-275151,845494

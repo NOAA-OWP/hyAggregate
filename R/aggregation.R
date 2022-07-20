@@ -88,6 +88,19 @@ collapse_network_inward =  function(network_list,
   nl
 }
 
+prep_for_ngen = function(network_list){
+  names(network_list$flowpaths)  = tolower(names(network_list$flowpaths))
+  names(network_list$catchments) = tolower(names(network_list$catchments))
+
+  # Add a hydrosequence to the flowpaths
+  network_list$flowpaths = add_hydroseq(flowpaths = network_list$flowpaths)
+
+  # Add area and length measures to the network list
+  network_list = add_measures(network_list$flowpaths, network_list$catchments)
+
+  network_list
+}
+
 #' @title Aggregate Network
 #' @param gf A path to a refactored geofarbric file (see US reference fabric)
 #' @param flowpaths an sf object
@@ -148,23 +161,9 @@ aggregate_network_to_distribution = function(gf = NULL,
   }
 
   # Create a network list and check if DAG and connected
-  network_list <- check_network_validity(flowpaths = flowpaths, cat = catchments)
-
-  prep_for_ngen = function(network_list){
-    names(network_list$flowpaths)  = tolower(names(network_list$flowpaths))
-    names(network_list$catchments) = tolower(names(network_list$catchments))
-
-    # Add a hydrosequence to the flowpaths
-    network_list$flowpaths = add_hydroseq(flowpaths = network_list$flowpaths)
-
-    # Add area and length measures to the network list
-    network_list = add_measures(network_list$flowpaths, network_list$catchments)
-
-    network_list
-  }
-
-  # Set all names to lower case!
-  network_list = prep_for_ngen(network_list)
+  network_list <- check_network_validity(flowpaths = flowpaths,
+                                         cat = catchments) %>%
+    prep_for_ngen()
 
   # Perform first aggregation step!
   network_list = aggregate_along_mainstems(network_list,

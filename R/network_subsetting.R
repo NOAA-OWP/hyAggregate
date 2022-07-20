@@ -28,8 +28,8 @@ layer_exists = function(gpkg, name){
 #' @export
 #' @importFrom sf read_sf st_transform
 
-find_origin = function(gpkg, pt) {
-  tmp = read_sf(gpkg,  'aggregate_catchment')[st_transform(pt, 5070), ]
+find_origin = function(gpkg, pt, catchment_name = "aggregate_divides") {
+  tmp = read_sf(gpkg,  catchment_name)[st_transform(pt, 5070), ]
   gsub("cat-", "wb-", tmp$id)
 }
 

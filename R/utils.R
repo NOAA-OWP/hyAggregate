@@ -16,13 +16,17 @@ flush_prefix = function(input, col) {
 #' @return sf object
 #' @export
 #' @importFrom  nhdplusTools get_sorted rename_geometry
+#'
 add_hydroseq = function(flowpaths) {
+
   flowpaths$terminalID = NULL
   flowpaths$terminalid = NULL
+  flowpaths$hydroseq   = NULL
   flowpaths$toid = ifelse(is.na(flowpaths$toid), 0, flowpaths$toid)
-  flowpaths = get_sorted(select(flowpaths, id, toid, everything()), split = TRUE)
-  flowpaths['hydroseq'] = 1:nrow(flowpaths)
-  rename_geometry(flowpaths, "geometry")
+  topo = get_sorted(st_drop_geometry(select(flowpaths, id, toid)), split = FALSE)
+  topo['hydroseq'] = 1:nrow(topo)
+
+  left_join(flowpaths, select(topo, id, hydroseq), by = "id")
 }
 #' Add Measures to Flowlines and Catchments
 #' @param flowpaths sf object (LINESTRING)

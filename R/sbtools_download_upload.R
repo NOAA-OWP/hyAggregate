@@ -18,7 +18,7 @@ find_pu = function(location, pu = "vpu"){ get_boundaries(pu)[st_transform(locati
 #' @export
 
 .getExtension = function (x, prefix = "") {
-  ext <- strsplit(basename(file), split = "\\.")[[1]]
+  ext <- strsplit(basename(x), split = "\\.")[[1]]
   return(paste0(prefix, ext[length(ext)]))
 }
 
