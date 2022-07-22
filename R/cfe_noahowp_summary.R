@@ -51,6 +51,7 @@ aggregate_cfe_noahowp = function(gpkg = NULL,
                                  flowline_name  = "aggregate_flowpaths",
                                  ID = "id",
                                  precision = 9,
+                                 add_weights_to_gpkg = TRUE,
                                  add_to_gpkg = TRUE,
                                  overwrite = FALSE) {
 
@@ -79,6 +80,10 @@ aggregate_cfe_noahowp = function(gpkg = NULL,
 
   log_info("Building weighting grid from ", terra::sources(data)[1])
   nwm_w_1000m = weight_grid(data, cats,  ID = ID, progress = FALSE)
+
+  if(add_weights_to_gpkg){
+    write_sf(nwm_w_1000m, gpkg, "nwm1km_weights")
+  }
 
   log_success("Done!")
   soils_exe = list()
