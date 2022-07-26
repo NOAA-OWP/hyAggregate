@@ -24,6 +24,7 @@ add_hydroseq = function(flowpaths) {
   flowpaths$hydroseq   = NULL
   flowpaths$toid = ifelse(is.na(flowpaths$toid), 0, flowpaths$toid)
   topo = get_sorted(st_drop_geometry(select(flowpaths, id, toid)), split = FALSE)
+  gc()
   topo['hydroseq'] = 1:nrow(topo)
 
   left_join(flowpaths, select(topo, id, hydroseq), by = "id")
@@ -101,12 +102,16 @@ aggregate_sets = function(flowpaths, cat, index_table) {
 
   set_topo = index_table %>%
     group_by(set) %>%
-    mutate(member_comid  = paste(.data$member_comid, collapse = ",")) %>%
+    mutate(member_comid  = paste(.data$member_comid, collapse = ","),
+           type  = paste(.data$type[!is.na(.data$type)], collapse = ","),
+           type = ifelse(.data$type == "", NA, .data$type)) %>%
     slice_max(hydroseq) %>%
     ungroup() %>%
-    select(set, id = toid, levelpathid, member_comid) %>%
+    select(set, id = toid, levelpathid, member_comid, type) %>%
     left_join(select(index_table, toset = set, id), by = "id") %>%
     select(-id)
+
+  ####
 
   single_flowpaths = filter(index_table, n == 1) %>%
     left_join(flowpaths, by = "id") %>%
@@ -118,13 +123,14 @@ aggregate_sets = function(flowpaths, cat, index_table) {
     left_join(flowpaths, by = "id") %>%
     st_as_sf() %>%
     select(set) %>%
+    filter(!sf::st_is_empty(.)) %>%
     geos_union_linestring_hyaggregate('set') %>%
     rename_geometry("geometry") %>%
     bind_rows(single_flowpaths) %>%
     select(set) %>%
     left_join(set_topo, by = "set") %>%
-    rename(ID = set, toID = toset) %>%
-    flowpaths_to_linestrings()
+    rename(id = set, toid = toset)
+
   ####
 
   single_catchments = filter(index_table, n == 1) %>%
@@ -136,22 +142,19 @@ aggregate_sets = function(flowpaths, cat, index_table) {
   catchments_out  = filter(index_table, n != 1) %>%
     left_join(cat, by = "id") %>%
     st_as_sf() %>%
-    #TODO: this is dealing with disjoint levelpath catchments that are "merged". Creates a MULTIPOLYGON from
-    # Multiple input polygons when needed
+    select(set) %>%
+    filter(!sf::st_is_empty(.)) %>%
     geos_union_polygon_hyaggregate('set') %>%
     rename_geometry("geometry") %>%
     bind_rows(single_catchments) %>%
     select(set) %>%
     left_join(set_topo, by = "set") %>%
-    rename(ID = set, toID = toset) %>%
-    filter(!sf::st_is_empty(.))
+    rename(id = set, toid = toset)
 
-  catchments_out$toID = ifelse(is.na(catchments_out$toID), 0, catchments_out$toID)
-  names(flowpaths_out) = tolower(names(flowpaths_out))
-  names(catchments_out) = tolower(names(catchments_out))
-  flowpaths_out = add_hydroseq(flowpaths_out)
-  nl = add_measures(flowpaths_out, catchments_out)
-  check_network_validity(flowpaths = nl$flowpaths, cat = nl$catchments)
+  catchments_out$toid = ifelse(is.na(catchments_out$toid), 0, catchments_out$toid)
+
+  check_network_validity(flowpaths = flowpaths_out, cat = catchments_out) %>%
+    prep_for_ngen()
 }
 
 ##' @title Fast LINESTRING union
@@ -243,18 +246,24 @@ agg_length_area   <- function(l, a, lthres, athres) {
   return (ids)
 }
 
-#' Cumulative sum area grouping
-#' @description This function takes a vector of area's and returns a
-#' grouping vector that aims to combine then towards an ideal aggregate size (threshold)
-#' @param a a vector of areas
-#' @param athres a threshold, or target, cumulative size
-#' @return a vector of length(a) containing grouping indexes
+splitAt <- function(x, pos) unname(split(x, cumsum(seq_along(x) %in% (pos +1)) ))
+
+
+#' Index a Vector by cumulative Sum
+#'
+#' @param a a vector of values
+#' @param athres the ideal size of each index. Cummulative sums will get as close to this value without exceeding it
+#' @return a vector of length(a)
 #' @export
 
-cs_group                   <- function(a, athres) {
+assign_id = function(a, athres
+                     #, amin
+                     ){
+
   cumsum <- 0
   group  <- 1
   result <- numeric()
+
   for (i in 1:length(a)) {
     cumsum <- cumsum + a[i]
     if (cumsum > athres) {
@@ -263,8 +272,138 @@ cs_group                   <- function(a, athres) {
     }
     result = c(result, group)
   }
+
+  # if(a[1] < amin & length(a) > 1){
+  #   result[1] = result[2]
+  # }
+  #
+  # if(a[length(a)] < amin & length(a) > 1){
+  #   result[length(result)] = result[length(result) - 1]
+  # }
+
   return (result)
 }
+
+
+#' Cumulative sum area grouping
+#' @description This function takes a vector of areas and lengths and returns a
+#' index vector that combines them towards an ideal aggregate area (athres). While enforcing a minimum area (amin) and length (lmin).
+#' Additionally, this function can take a set of indexes to exclude over which the network cannot be aggregated.
+#' @param areas a vector of areas
+#' @param lengths a vector of lengths
+#' @param exclude a vector of equal length to areas and lengths. Any non NA value will be used to enforce an aggregation break
+#' @param ideal_size_sqkm a vector of areas
+#' @param amin a threshold, or target, cumulative size
+#' @param lmin a threshold, or target, cumulative size
+#' @return a vector of length(areas) containing grouping indexes
+#' @export
+
+cs_group <- function(areas, lengths, exclude, ideal_size_sqkm, amin, lmin) {
+
+  areas[is.na(areas)] = 0
+  lengths[is.na(lengths)] = 0
+
+  if(length(areas) == 1){ return(1) }
+
+  break_index = which(!is.na(exclude))
+
+  if(length(break_index) != 0){
+    sub_areas = splitAt(areas, break_index)
+    sub_lengths = splitAt(lengths, break_index)
+    #splitAt(index_table$id, break_index)
+  } else {
+    sub_areas = list(areas)
+    sub_lengths = list(lengths)
+  }
+
+  if(all(lengths(sub_areas) != lengths(sub_areas))){
+    stop("Yuck~")
+  }
+
+   o1 = lapply(sub_areas, assign_id, athres = ideal_size_sqkm)
+   #lengths(o1) == lengths(sub_areas)
+   o2 = lapply(1:length(sub_areas),   function(i) { pinch_sides(   x = sub_areas[[i]],   ind = o1[[i]], thres = amin) })
+   #lengths(o2) == lengths(sub_areas)
+   o3 = lapply(1:length(sub_lengths), function(i) { pinch_sides(   x = sub_lengths[[i]], ind = o2[[i]], thres = lmin) })
+   #lengths(o3) == lengths(sub_areas)
+   o4 = lapply(1:length(sub_areas),   function(i) { middle_massage(x = sub_areas[[i]],   ind = o3[[i]], thres = amin) })
+   #lengths(o4) == lengths(sub_areas)
+   o5 = lapply(1:length(sub_lengths), function(i) { middle_massage(x = sub_lengths[[i]], ind = o4[[i]], thres = lmin) })
+   #lengths(o5) == lengths(sub_areas)
+
+    for(i in 1:length(o5)){ o5[[i]] = o5[[i]] + 1e9*i }
+
+    unlist(o5)
+
+}
+
+#' Re-index the edges of vector by threshold
+#' Merge the outside edges of a vector if they are less then the provides threshold.
+#' @param x vector of values
+#' @param ind current index values
+#' @param thres threshold to evaluate x
+#' @return a vector of length(x) containing grouping indexes
+#' @export
+
+pinch_sides = function(x, ind, thres){
+  # i = 2
+  # x = sub_areas[[i]]; ind = o[[i]]
+  tmp_areas = unlist(lapply(split(x, ind), sum))
+
+  if(length(tmp_areas) == 1){ return(ind) }
+  #
+  n = as.numeric(names(tmp_areas))
+
+  if(tmp_areas[1] < thres){
+    names(tmp_areas)[1] = names(tmp_areas[2])
+  }
+
+  if(tmp_areas[length(tmp_areas)] < thres){
+    names(tmp_areas)[length(tmp_areas)] = names(tmp_areas[length(tmp_areas) - 1])
+  }
+
+  n2 = as.numeric(names(tmp_areas))
+
+  n2[match(ind, n)]
+}
+
+
+#' Re-index the interior of vector by threshold
+#' Merge the interior values of a vector if they are less then the provided threshold.
+#' Merging will look "up" and "down" the vector and merge into the smaller of the two.
+#' @param x vector of values
+#' @param ind current index values
+#' @param thres threshold to evaluate x
+#' @return a vector of length(x) containing grouping indexes
+#' @export
+
+middle_massage = function(x, ind, thres){
+
+  # i = 5
+  # x = sub_areas[[i]]; ind = o2[[i]]
+
+  tmp_areas = unlist(lapply(split(x, ind), sum))
+
+  if(length(tmp_areas) == 1){ return(ind) }
+
+  n = as.numeric(names(tmp_areas))
+
+  if(any(tmp_areas < thres)){
+    tmp = which(tmp_areas < thres)
+
+    for(j in 1:length(tmp)){
+      base = as.numeric(tmp[j])
+      edges = c(base - 1, base + 1)
+      becomes = names(which.min(tmp_areas[edges]))
+      names(tmp_areas)[base] = becomes
+    }
+  }
+
+  n2 = as.numeric(names(tmp_areas))
+
+  n2[match(ind, n)]
+}
+
 
 #' Check Network Validity
 #' **INTERNAL** function that validates a flowpath and catchment network
@@ -417,4 +556,24 @@ get_nexus_locations = function(fp, term_cut =  1e9){
   df
 }
 
+
+add_grid_mapping = function(gpkg = NULL,
+                                 catchment_name = "aggregate_divides",
+                                 template = '/Users/mjohnson/Downloads/AORC-OWP_2012063021z.nc4',
+                                 grid_name = NULL,
+                                 add_to_gpkg = TRUE){
+
+  out = weight_grid(rast(template),
+                    geom = sf::read_sf(gpkg, catchment_name),
+                    ID = "id")
+
+  if(add_to_gpkg){
+    if(is.null(grid_name)){ stop("To write this file to a gpkg, a `grid_name` must be provided ...") }
+    write_sf(out, gpkg, grid_name)
+  } else{
+    return(out)
+  }
+
+
+}
 

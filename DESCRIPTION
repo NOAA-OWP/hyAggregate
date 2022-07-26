@@ -21,8 +21,7 @@ Imports:
     igraph,
     jsonlite,
     logger,
-    nhdplusTools,
-    rmapshaper,
+    nhdplusTools (>= 0.5.5),
     RNetCDF,
     sbtools,
     sf,
@@ -33,7 +32,8 @@ Imports:
     units,
     zonal
 Remotes: 
-    mikejohnson51/zonal
+    mikejohnson51/zonal,
+    USGS-R/nhdplusTools
 VignetteBuilder: knitr
 Suggests: 
     arrow,
