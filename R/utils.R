@@ -573,3 +573,65 @@ add_grid_mapping = function(gpkg = NULL,
 
 }
 
+
+#' Check if a geopackage and layer exists
+#' This function checks if a layer exists in a geopackage
+#' @param gpkg path to geopackage
+#' @param name name of layer to check
+#' @return logical
+#' @export
+#' @importFrom sf st_layers
+
+layer_exists = function(gpkg, name){
+
+  if(!file.exists(gpkg)){ return(FALSE) }
+
+  if(name %in% st_layers(gpkg)$name){
+    return(TRUE)
+  } else {
+    return(FALSE)
+  }
+}
+
+#' Extract nexus locations for Reference POIs
+#'
+#' @param gpkg a reference hydrofabric gpkg
+#' @param type the type of desired POIs
+#' @param verbose should messages be emitted?
+#' @return data.frame with ID, type columns
+#' @export
+#' @importFrom sf read_sf st_drop_geometry
+#' @importFrom dplyr select mutate_at vars filter mutate group_by summarize
+#' @importFrom logger log_info
+#' @importFrom tidyr pivot_longer
+
+nexus_from_poi = function(gpkg,
+                          type = c('HUC12', 'Gages', 'TE', 'NID', 'WBIn', 'WBOut'),
+                          verbose = TRUE){
+
+  valid_types = c('HUC12', 'Gages', 'TE', 'NID', 'WBIn', 'WBOut', "Conf", "Term", "Elev", "Travel", "Con")
+
+  if(!all(type %in% valid_types)){
+    bad_ids = type[!which(type %in% valid_types)]
+    stop(bad_ids, " are not valid POI types. Only ", paste(valid_types, collapse = ", "), " are valid")
+  }
+
+  nexus_locations  = read_sf(gpkg, "mapped_POIs") |>
+    st_drop_geometry() |>
+    select(ID, paste0("Type_", type)) %>%
+    dplyr::mutate_at(dplyr::vars(matches("Type_")), as.character) |>
+    tidyr::pivot_longer(-ID) |>
+    filter(!is.na(value)) |>
+    mutate(name = gsub("Type_", "", name)) |>
+    group_by(ID) %>%
+    dplyr::summarize(type = paste(unique(name), collapse = ", "))
+
+  if(verbose){
+    logger::log_info("{nrow(nexus_locations)} distinct POIs found.")
+    print(data.frame(table(nexus_locations$type)))
+  }
+
+  nexus_locations
+
+}
+
