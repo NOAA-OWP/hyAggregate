@@ -6,8 +6,6 @@
 \usage{
 aggregate_network_to_distribution(
   gf = NULL,
-  flowpaths = NULL,
-  catchments = NULL,
   ideal_size_sqkm = 10,
   min_length_km = 1,
   min_area_sqkm = 3,
@@ -15,15 +13,12 @@ aggregate_network_to_distribution(
   verbose = TRUE,
   overwrite = FALSE,
   nexus_topology = TRUE,
-  routelink_path = NULL
+  routelink_path = NULL,
+  nexus_locations = NULL
 )
 }
 \arguments{
-\item{gf}{A path to a refactored geofarbric file (see US reference fabric)}
-
-\item{flowpaths}{an sf object}
-
-\item{catchments}{an sf object}
+\item{gf}{A path to a refactored geofarbric file (see US reference fabric) <-}
 
 \item{ideal_size_sqkm}{The ideal size of catchments (default = 10 sqkm)}
 
@@ -38,6 +33,12 @@ aggregate_network_to_distribution(
 \item{overwrite}{overwrite existing gf file. Default is FALSE}
 
 \item{nexus_topology}{should a hy-features cat-->nex topology be enforced? default = TRUE}
+
+\item{nexus_locations}{a data.frame with columns specifiying the ID, and the nexus type.}
+
+\item{flowpaths}{an sf object}
+
+\item{catchments}{an sf object}
 }
 \value{
 if outfile = TRUE, a file path, else a list object

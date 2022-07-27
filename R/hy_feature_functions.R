@@ -70,12 +70,6 @@ get_nexus = function(fp, term_cut = 1e9, nexus_prefix = "nex-", terminal_nexus_p
   fp = flush_prefix(fp, "id")
   fp = flush_prefix(fp, "toid")
 
-  if(!"hydroseq" %in% names(fp)){
-    fp = add_hydroseq(fp)
-  }
-
-  #fp = identify_terminals(fp, term_cut = term_cut)
-
   term_node = filter(fp, toid > term_cut |
                        toid == 0 | is.na(toid)) %>%
     rename_geometry("geometry") %>%
@@ -89,11 +83,12 @@ get_nexus = function(fp, term_cut = 1e9, nexus_prefix = "nex-", terminal_nexus_p
     filter(id %in% unique(toid)) %>%
     rename_geometry("geometry") %>%
     mutate(geometry = get_node(., "start")$geometry) %>%
-    select(id, toid)
+    select(id, toid, type)
 
   imap = st_intersects(nex, fp)
 
   df = data.frame(id       = rep(nex$id, times = lengths(imap)),
+                  type       = rep(nex$type, times = lengths(imap)),
                   touches  = fp$id[unlist(imap)]) %>%
     mutate(cond = ifelse(id == touches, "move", "aaa")) %>%
     group_by(id) %>%
@@ -110,7 +105,7 @@ get_nexus = function(fp, term_cut = 1e9, nexus_prefix = "nex-", terminal_nexus_p
     rename_geometry("geometry")
 
   fp_ends = bind_rows(
-    select(fp, id, hydroseq, toid) %>%
+    select(fp, id, hydroseq, toid, type) %>%
       rename_geometry("geometry") %>%
       mutate(geometry = get_node(., "end")$geometry, pos = "end"),
     select(fp, id, hydroseq, toid) %>%
@@ -123,6 +118,7 @@ get_nexus = function(fp, term_cut = 1e9, nexus_prefix = "nex-", terminal_nexus_p
   df = data.frame(
     id       = rep(to_move$id, times = lengths(imap)),
     touches  = fp_ends$id[unlist(imap)],
+    touches  = fp_ends$type[unlist(imap)],
     pos      = fp_ends$pos[unlist(imap)],
     hs       = fp_ends$hydroseq[unlist(imap)]
   ) %>%
@@ -132,9 +128,10 @@ get_nexus = function(fp, term_cut = 1e9, nexus_prefix = "nex-", terminal_nexus_p
     dplyr::slice_max(hydroseq) %>%
     ungroup() %>%
     st_as_sf() %>%
-    select(id) %>%
+    select(id, type) %>%
     bind_rows(to_keep) %>%
-    bind_rows(term_node)
+    bind_rows(term_node) %>%
+    mutate(type = ifelse(is.na(.data$type), "implied", .data$type))
 
   df$id = ifelse(df$id >= term_cut, paste0(terminal_nexus_prefix, df$id), paste0(nexus_prefix, df$id))
 

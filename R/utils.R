@@ -16,7 +16,7 @@ flush_prefix = function(input, col) {
 #' @return sf object
 #' @export
 #' @importFrom  nhdplusTools get_sorted rename_geometry
-#'
+
 add_hydroseq = function(flowpaths) {
 
   flowpaths$terminalID = NULL
@@ -248,7 +248,6 @@ agg_length_area   <- function(l, a, lthres, athres) {
 
 splitAt <- function(x, pos) unname(split(x, cumsum(seq_along(x) %in% (pos +1)) ))
 
-
 #' Index a Vector by cumulative Sum
 #'
 #' @param a a vector of values
@@ -416,9 +415,6 @@ middle_massage = function(x, ind, thres){
 #' @importFrom sf st_drop_geometry
 
 check_network_validity     <- function(flowpaths, cat, term_cut = 1e9, check = TRUE){
-
-  flowpaths  = flowpaths[!duplicated(flowpaths),]
-  cat = cat[!duplicated(cat),]
 
   names(flowpaths) = tolower(names(flowpaths))
   names(cat) = tolower(names(cat))

@@ -4,17 +4,26 @@
 \alias{cs_group}
 \title{Cumulative sum area grouping}
 \usage{
-cs_group(a, athres)
+cs_group(areas, lengths, exclude, ideal_size_sqkm, amin, lmin)
 }
 \arguments{
-\item{a}{a vector of areas}
+\item{areas}{a vector of areas}
 
-\item{athres}{a threshold, or target, cumulative size}
+\item{lengths}{a vector of lengths}
+
+\item{exclude}{a vector of equal length to areas and lengths. Any non NA value will be used to enforce an aggregation break}
+
+\item{ideal_size_sqkm}{a vector of areas}
+
+\item{amin}{a threshold, or target, cumulative size}
+
+\item{lmin}{a threshold, or target, cumulative size}
 }
 \value{
-a vector of length(a) containing grouping indexes
+a vector of length(areas) containing grouping indexes
 }
 \description{
-This function takes a vector of area's and returns a
-grouping vector that aims to combine then towards an ideal aggregate size (threshold)
+This function takes a vector of areas and lengths and returns a
+index vector that combines them towards an ideal aggregate area (athres). While enforcing a minimum area (amin) and length (lmin).
+Additionally, this function can take a set of indexes to exclude over which the network cannot be aggregated.
 }
