@@ -5,19 +5,19 @@
 \title{get nexuses}
 \usage{
 get_nexus(
-  fp,
+  fline,
   term_cut = 1e+09,
   nexus_prefix = "nex-",
   terminal_nexus_prefix = "tnx-"
 )
 }
 \arguments{
-\item{nexus_prefix}{character prefix for nexus IDs}
-
-\item{terminal_nexus_prefix}{character prefix for ternimal nexus IDs}
-
 \item{fline}{sf data.frame NHDPlus Flowlines or hyRefactor output.}
+
+\item{nexus_prefix}{character prefix for nexus IDs}
 }
 \description{
+get nexuses
+
 get nexuses
 }

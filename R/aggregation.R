@@ -11,22 +11,26 @@
 #' @importFrom sf st_set_geometry st_geometry st_buffer st_intersects
 #' @importFrom nhdplusTools get_node
 
+
+
 build_collapse_table = function(network_list,
                                 min_area_sqkm = 3,
                                 min_length_km  = 1){
 
   bad =  mutate(network_list$flowpaths, hw = ifelse(!id %in% toid, TRUE, FALSE),
                 small = areasqkm < min_area_sqkm | lengthkm < min_length_km) |>
-    filter(hw, small)
+    filter(hw, small) |>
+    # needed for VPU02 - DO NOT REMOVE!!!!
+    st_cast("MULTILINESTRING")
 
   outlets =  st_buffer(st_set_geometry(bad, st_geometry(get_node(bad, "end"))), 1)
 
-  emap = st_intersects(outlets, fl)
+  emap = st_intersects(outlets, network_list$flowpaths)
 
-  data.frame(
+  df = data.frame(
     id       = rep(outlets$id, times = lengths(emap)),
     toid     = rep(outlets$toid, times = lengths(emap)),
-    touches  = fl$id[unlist(emap)],
+    touches  = network_list$flowpaths$id[unlist(emap)],
     id_type  = rep(outlets$type, times = lengths(emap))
   ) %>%
     filter(!.data$id == .data$touches) %>%
@@ -51,6 +55,9 @@ build_collapse_table = function(network_list,
 #' @importFrom logger log_info log_success
 #' @importFrom dplyr filter left_join mutate bind_rows
 #' @importFrom nhdplusTools get_node
+
+#saveRDS(network_list, "data/tmp-test.rds")
+#network_list = readRDS("data/tmp-test.rds")
 
 collapse_hw = function(network_list,
                        min_area_sqkm = 3,
@@ -97,9 +104,13 @@ collapse_hw = function(network_list,
 #' @param network_list a list with flowpath and catchment data
 #' @return a list containing flowpath and catchment `sf` objects
 #' @export
+#' @importFrom nhdplusTools get_streamorder calculate_total_drainage_area
+#' @importFrom sf st_drop_geometry
+#' @importFrom dplyr select
 #' @noRd
 
 prep_for_ngen = function(network_list){
+
   names(network_list$flowpaths)  = tolower(names(network_list$flowpaths))
   names(network_list$catchments) = tolower(names(network_list$catchments))
 
@@ -108,6 +119,28 @@ prep_for_ngen = function(network_list){
 
   # Add area and length measures to the network list
   network_list = add_measures(network_list$flowpaths, network_list$catchments)
+
+  if(any(is.na(network_list$flowpaths$areasqkm))){
+    log_warn("NA values found in areasqkm, accumulation not computed.")
+  } else {
+    network_list$flowpaths$tot_drainage_areasqkm = calculate_total_drainage_area(st_drop_geometry(
+      select(
+        network_list$flowpaths,
+        ID = id,
+        toID = toid,
+        area = areasqkm
+      )
+    ))
+  }
+
+
+  network_list$flowpaths$order = get_streamorder(st_drop_geometry(
+    select(
+      network_list$flowpaths,
+      ID = id,
+      toID = toid
+    )
+  ))
 
   network_list
 }
@@ -195,34 +228,6 @@ aggregate_network_to_distribution = function(gf = NULL,
                              min_length_km,
                              verbose = verbose)
 
-  if (verbose) {
-    log_success("Network is valid.")
-  }
-
-  network_list$flowpaths$tot_drainage_areasqkm = calculate_total_drainage_area(st_drop_geometry(
-    select(
-      network_list$flowpaths,
-      ID = id,
-      toID = toid,
-      area = areasqkm
-    )
-  ))
-
-  if (verbose) {
-    log_success("Total Upstream Drainage Computed and Added.")
-  }
-
-  network_list$flowpaths$order = get_streamorder(st_drop_geometry(
-    select(
-      network_list$flowpaths,
-      ID = id,
-      toID = toid
-    )
-  ))
-
-  if (verbose) {
-    log_success("Stream Order Computed and Added.")
-  }
 
   if (nexus_topology) {
 
@@ -230,25 +235,26 @@ aggregate_network_to_distribution = function(gf = NULL,
       log_info("Applying HY_feature topology...")
     }
 
-    network_list$flowpaths =  assign_nex_ids(network_list$flowpaths)
+    network_list$flowpaths           <- assign_nex_ids(fline = network_list$flowpaths)
 
     network_list$catchment_edge_list <- get_catchment_edges_terms(network_list$flowpaths)
 
-    network_list$flowpath_edge_list  <- get_catchment_edges_terms(network_list$flowpaths, catchment_prefix = 'wb-')
-
-    #network_list$waterbody_edge_list <- get_waterbody_edges_terms(network_list$flowpaths)
+    network_list$flowpath_edge_list  <- get_catchment_edges_terms(network_list$flowpaths,
+                                                                  catchment_prefix = 'wb-')
 
     network_list$nex =  left_join(
-      get_nexus(fp = network_list$flowpaths),
+      get_nexus(fline = network_list$flowpaths),
       network_list$catchment_edge_list,
       by = "id"
     )
 
-    network_list$catchments = get_catchment_data(network_list$catchments, network_list$catchment_edge_list)
+    network_list$catchments <- get_catchment_data(network_list$catchments, network_list$catchment_edge_list)
 
-    network_list$flowpaths  = get_flowpath_data(fline = network_list$flowpaths, catchment_edge_list = network_list$catchment_edge_list)
+    network_list$flowpaths  <- get_flowpath_data(fline = network_list$flowpaths, catchment_edge_list = network_list$catchment_edge_list)
+  }
 
-    if(!is.null(routelink_path)){
+
+  if(!is.null(routelink_path)){
       if (verbose) {
         log_info("Creating Routeing Table based on: {routelink_path}")
       }
@@ -259,8 +265,8 @@ aggregate_network_to_distribution = function(gf = NULL,
       if (verbose) {
         log_success("Done!")
       }
-    }
   }
+
 
 
   if (is.null(outfile)) {
@@ -277,17 +283,9 @@ aggregate_network_to_distribution = function(gf = NULL,
       write_sf(network_list$nex, outfile, "nexus")
     }
 
-    # if (!is.null(network_list$catchment_edge_list)) {
-    #   write_sf(network_list$catchment_edge_list, outfile, "catchment_edge_list")
-    # }
-
     if (!is.null(network_list$flowpath_edge_list)) {
       write_sf(network_list$flowpath_edge_list, outfile, "flowpath_edge_list")
     }
-
-    # if (!is.null(network_list$waterbody_edge_list)) {
-    #   write_sf(network_list$waterbody_edge_list, outfile, "waterbody_edge_list")
-    # }
 
     if (!is.null(network_list$waterbody_attributes)) {
       write_sf(network_list$waterbody_attributes, outfile, "flowpath_attributes")

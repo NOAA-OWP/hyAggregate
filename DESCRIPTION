@@ -21,6 +21,7 @@ Imports:
     igraph,
     jsonlite,
     logger,
+    magrittr,
     nhdplusTools (>= 0.5.5),
     RNetCDF,
     sbtools,
@@ -29,6 +30,7 @@ Imports:
     sys,
     terra,
     tidyr,
+    tools,
     units,
     zonal
 Remotes: 

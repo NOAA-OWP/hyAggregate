@@ -47,6 +47,7 @@ assign_nex_ids = function(fline, term_cut = 1e9) {
   term_node = filter(fline, toid == 0 | is.na(toid)) %>%
     mutate(toid = term_cut + 1:n())
 
+
   no_term = filter(fline, !id %in% term_node$id)
 
   bind_rows(term_node, no_term) %>%
@@ -55,8 +56,70 @@ assign_nex_ids = function(fline, term_cut = 1e9) {
 }
 
 
-
 #' @title get nexuses
+#' @title get nexuses
+#' @param fline sf data.frame NHDPlus Flowlines or hyRefactor output.
+#' @param nexus_prefix character prefix for nexus IDs
+#' @importFrom sf st_coordinates st_as_sf st_crs
+#' @importFrom magrittr %>%
+#' @importFrom dplyr group_by filter ungroup select n row_number rename
+#' @export
+#'
+
+get_nexus <- function(fline, term_cut = 1e9,
+                      nexus_prefix = "nex-",
+                      terminal_nexus_prefix = "tnx-") {
+
+  nexus <- fline %>%
+    st_cast("MULTILINESTRING") %>%
+    st_coordinates() %>%
+    as.data.frame()
+
+  if("L2" %in% names(nexus)) {
+    nexus <- rename(nexus, GG = .data$L2)
+  } else {
+    nexus <- rename(nexus, GG = .data$L1)
+  }
+
+  fline <- check_nexus(fline)
+
+  nexus <- nexus %>%
+    group_by(.data$GG) %>%
+    filter(row_number() == n()) %>%
+    ungroup() %>%
+    select(.data$X, .data$Y) %>%
+    st_as_sf(coords = c("X", "Y"), crs = st_crs(fline))
+
+  nexus$id <- fline$to_nID
+  nexus$type <- ifelse(is.na(fline$type), "infered", fline$type)
+  nexus$type <- ifelse(nexus$id > term_cut, "terminal", nexus$type)
+
+  nexus$id = ifelse(nexus$id >= term_cut, paste0(terminal_nexus_prefix, nexus$id), paste0(nexus_prefix, nexus$id))
+
+  if(length(unique(nexus$id)) < nrow(nexus)) {
+    nexus <- group_by(nexus, .data$id) %>%
+      filter(row_number() == 1) %>%
+      ungroup()
+  }
+
+  return(nexus)
+}
+
+check_nexus <- function(fline) {
+
+  fline$from_nID <- fline$id
+
+  fline <- left_join(fline,
+                     select(st_drop_geometry(fline), .data$id, to_nID = .data$from_nID),
+                     by = c("toid" = "id"))
+
+  fline$to_nID[is.na(fline$to_nID)] <- fline$toid[is.na(fline$to_nID)]
+
+  fline
+
+}
+
+#  Old Get Nexus
 #' @param fline sf data.frame NHDPlus Flowlines or hyRefactor output.
 #' @param nexus_prefix character prefix for nexus IDs
 #' @param terminal_nexus_prefix character prefix for ternimal nexus IDs
@@ -64,39 +127,42 @@ assign_nex_ids = function(fline, term_cut = 1e9) {
 #' @importFrom dplyr group_by filter ungroup select n row_number rename %>%
 #' @export
 
-get_nexus = function(fp, term_cut = 1e9, nexus_prefix = "nex-", terminal_nexus_prefix = "tnx-") {
+get_nexus_old = function(fline,
+                     term_cut = 1e9,
+                     nexus_prefix = "nex-",
+                     terminal_nexus_prefix = "tnx-") {
 
-  fp = st_cast(fp, "MULTILINESTRING")
-  fp = flush_prefix(fp, "id")
-  fp = flush_prefix(fp, "toid")
+  fline = st_cast(fline, "MULTILINESTRING")
+  fline = flush_prefix(fline, "id")
+  fline = flush_prefix(fline, "toid")
 
-  term_node = filter(fp, toid > term_cut |
+  term_node = filter(fline, toid > term_cut |
                        toid == 0 | is.na(toid)) %>%
     rename_geometry("geometry") %>%
     mutate(geometry = get_node(., "end")$geometry) %>%
-    select(id = toid)
+    select(id = toid, type)
 
-  nex = fp %>%
+  nex = fline %>%
     left_join(st_drop_geometry(select(
-      fp, toid = id, ds_toID = toid
+      fline, toid = id, ds_toID = toid
     )), by = c("toid")) %>%
     filter(id %in% unique(toid)) %>%
     rename_geometry("geometry") %>%
     mutate(geometry = get_node(., "start")$geometry) %>%
     select(id, toid, type)
 
-  imap = st_intersects(nex, fp)
+  imap = st_intersects(nex, fline)
 
   df = data.frame(id       = rep(nex$id, times = lengths(imap)),
-                  type       = rep(nex$type, times = lengths(imap)),
-                  touches  = fp$id[unlist(imap)]) %>%
+                  type     = rep(nex$type, times = lengths(imap)),
+                  touches  = fline$id[unlist(imap)]) %>%
     mutate(cond = ifelse(id == touches, "move", "aaa")) %>%
     group_by(id) %>%
     arrange(cond) %>%
     slice_head(n = 1) %>%
     ungroup()
 
-  to_move = filter(fp, id %in% filter(df, cond == "move")$id) %>%
+  to_move = filter(fline, id %in% filter(df, cond == "move")$id) %>%
     select(id) %>%
     rename_geometry("geometry")
 
@@ -105,10 +171,10 @@ get_nexus = function(fp, term_cut = 1e9, nexus_prefix = "nex-", terminal_nexus_p
     rename_geometry("geometry")
 
   fp_ends = bind_rows(
-    select(fp, id, hydroseq, toid, type) %>%
+    select(fline, id, hydroseq, toid, type) %>%
       rename_geometry("geometry") %>%
       mutate(geometry = get_node(., "end")$geometry, pos = "end"),
-    select(fp, id, hydroseq, toid) %>%
+    select(fline, id, hydroseq, toid) %>%
       rename_geometry("geometry") %>%
       mutate(geometry = get_node(., "start")$geometry, pos = "start")
   )

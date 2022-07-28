@@ -130,39 +130,19 @@ get_routelink = function(atts = NULL, path = get_routelink_path(), build = TRUE)
 #' @importFrom dplyr select mutate filter left_join right_join arrange group_by summarize
 #' @importFrom sf st_drop_geometry st_as_sf st_cast st_length
 
-add_length_map = function (flowpaths, length_table) {
+build_length_map = function (flowpaths, length_table) {
 
-  tmp = select(st_drop_geometry(flowpaths), .data$id, comid = .data$member_comid) %>%
-    mutate(comid = strsplit(.data$comid, ","))
+  select(st_drop_geometry(flowpaths), .data$id, comid = .data$member_comid) %>%
+    mutate(comid = strsplit(.data$comid, ",")) |>
+    tidyr::unnest(cols = .data$comid) |>
+    mutate(comid = as.numeric(gsub("\\..*","", comid))) |>
+    left_join(length_table, by = "comid") |>
+    group_by(id) |>
+    mutate(totLength = sum(lengthkm),
+           perLength = round(lengthkm / totLength, 3),
+           totLength = NULL, lengthkm = NULL) |>
+    ungroup()
 
-  unnested = data.frame(id = rep(tmp$id, times = lengths(tmp$comid)),
-                        comid = as.character(unlist(tmp$comid)))
-
-  unnested2 = filter(unnested, grepl("\\.", comid)) %>%
-    mutate(baseCOMID = floor(as.numeric(comid)))
-
-  lengthm_fp = length_table %>%
-    select(baseCOMID = .data$comid, .data$lengthkm) %>%
-    mutate(lengthm_fp = .data$lengthkm * 1000, lengthkm = NULL)
-
-  lengthm_id = flowpaths %>%
-    mutate(lengthm_id = as.numeric(st_length(.))) %>%
-    select(.data$id, .data$lengthm_id) %>%
-    st_drop_geometry()
-
-  left_join(unnested2, lengthm_fp, "baseCOMID") %>%
-    left_join(lengthm_id, by = "id") %>%
-    mutate(perLength = round(.data$lengthm_id / .data$lengthm_fp, 3) / 10) %>%
-    select(.data$id, .data$comid, .data$perLength) %>%
-    right_join(unnested, by = c("id", "comid")) %>%
-    mutate(perLength = ifelse(is.na(.data$perLength), 1, as.character(.data$perLength))) %>%
-    arrange(.data$id) %>%
-    mutate(new = paste0(floor(as.numeric(.data$comid)), ".", gsub("0\\.", "", .data$perLength))) %>%
-    group_by(.data$id) %>%
-    summarize(lengthMap = paste(.data$new, collapse = ",")) %>%
-    right_join(flowpaths, by = "id") %>%
-    st_as_sf() %>%
-    st_cast("MULTILINESTRING")
 }
 
 #' Add Slope to Flowpaths
@@ -170,40 +150,24 @@ add_length_map = function (flowpaths, length_table) {
 #' @return sf object
 #' @export
 #' @importFrom nhdplusTools get_vaa
-#' @importFrom dplyr select mutate right_join group_by summarize across everything
-#' @importFrom sf st_drop_geometry
+#' @importFrom dplyr select mutate right_join group_by summarize
+#' @importFrom sf st_drop_geometry st_as_sf
 #' @importFrom tidyr unnest
 #' @importFrom stats weighted.mean
 
 add_slope = function(flowpaths) {
 
-  .data <- NULL
 
-  flowpaths =  add_length_map(flowpaths, length_table = get_vaa(c("lengthkm")))
+  # To calculate the true slope provided in NHDPlusFlowlineVAA
+  # To get percent slope, the values (m/km) must be divided
+  # by 1000 to get (m/m).
 
-  net_map  <-
-    dplyr::select(st_drop_geometry(flowpaths), .data$id, .data$lengthMap) %>%
-    mutate(comid = strsplit(.data$lengthMap, ",")) %>%
-    tidyr::unnest(cols = .data$comid) %>%
-    mutate(
-      full_comids = floor(as.numeric(.data$comid)),
-      w = 10 * (as.numeric(.data$comid) - .data$full_comids),
-      comid = NULL
-    )
-
-  df = nhdplusTools::get_vaa(c('lengthkm', "slope")) %>%
-    right_join(net_map, by = c('comid' = 'full_comids')) %>%
-    select(-.data$lengthMap) %>%
-    mutate(w = .data$w * .data$lengthkm) %>%
-    group_by(.data$id) %>%
-    summarize(across(everything(), ~ round(
-      weighted.mean(x = .,
-                    w = .data$w,
-                    na.rm = TRUE), 8
-    ))) %>%
-    dplyr::select(-.data$comid, -.data$lengthkm, -.data$w)
-
-  left_join(flowpaths, df, by = "id")
+  net_map =  build_length_map(flowpaths, length_table = get_vaa(c("lengthkm", "slope"))) |>
+    group_by(id) |>
+    summarize(slope = round(weighted.mean(.data$slope, w = .data$perLength, na.rm = TRUE), 3)) |>
+    right_join(flowpaths, by = "id") |>
+    mutate(slope = slope / 1000) |>
+    st_as_sf()
 }
 
 
@@ -226,36 +190,20 @@ length_average_routelink = function (flowpaths,
                                      rl_path = get_routelink_path()) {
 
 
-  flowpaths =  add_length_map(flowpaths, length_table = get_vaa("lengthkm"))
-
-  length_m_mapping = flowpaths %>%
-    mutate(length_m = as.numeric(st_length(flowpaths))) %>%
-    select(id, length_m) %>%
-    st_drop_geometry()
+  net_map =  build_length_map(flowpaths, length_table = get_vaa("lengthkm"))
 
   if (!"Length" %in% rl_vars) { rl_vars = c("Length", rl_vars) }
 
-  net_map <- select(st_drop_geometry(flowpaths), .data$id, .data$lengthMap) %>%
-    mutate(comid = strsplit(.data$lengthMap, ",")) %>%
-    tidyr::unnest(cols = .data$comid) %>%
-    mutate(full_comids = floor(as.numeric(.data$comid)),
-           w = 10 * (as.numeric(comid) - full_comids),
-           comid = NULL)
-
-
   df = get_routelink(rl_vars, path = rl_path) %>%
-    mutate(comid = as.numeric(comid)) %>%
-    right_join(net_map, by = c(comid = "full_comids")) %>%
-    select(-.data$lengthMap) %>%
-    mutate(w = .data$w * .data$Length) %>%
+    right_join(net_map, by = "comid") %>%
     group_by(.data$id) %>%
     summarize(across(everything(), ~ round(
       weighted.mean(x = .,
-                    w = .data$w, na.rm = TRUE), 8))) %>%
-    select(-.data$comid, -.data$Length, -.data$w)
+                    w = .data$perLength, na.rm = TRUE), 8))) %>%
+    select(-.data$comid, -.data$Length, -.data$perLength)
 
   df2 = get_routelink(c("comid", "gages", "NHDWaterbodyComID"), path = rl_path) %>%
-    right_join(net_map, by = c('comid' = "full_comids")) %>%
+    right_join(net_map, by = 'comid') %>%
     group_by(.data$id) %>%
     summarize(gages = paste(.data$gages[!is.na(.data$gages)], collapse = ","),
               NHDWaterbodyComID = paste(unique(.data$NHDWaterbodyComID[!is.na(.data$NHDWaterbodyComID)]), collapse = ",")) %>%
@@ -265,5 +213,5 @@ length_average_routelink = function (flowpaths,
     mutate(gages = as.character(.data$gages),
            NHDWaterbodyComID = as.character(.data$NHDWaterbodyComID))
 
-  left_join(df2, length_m_mapping, by = "id")
+  df2
 }
