@@ -1,24 +1,24 @@
-#' Build Collapse Table
-#' @description  This function identifies small (pathlength or area) headwater catchments and returns a data.frame
-#' with the current ID and the the feature ID it should collapse into (becomes).
-#' Headwaters are those segments in which there are no inflows (!ID %in% toID).
+#' @title Build Headwater Collapse Table
+#' @description  Identifies small (pathlength or area) headwater catchments and returns a data.frame
+#' with the current ID and the feature ID it should collapse into (becomes).
+#' Headwaters are segments in which there are no inflows (!ID %in% toID).
 #' @param network_list  a list containing flowpath and catchment `sf` objects
 #' @param min_area_sqkm The minimum allowable size of the output hydrofabric catchments
 #' @param min_length_km The minimum allowable length of the output hydrofabric flowlines
-#' @return a 2 column data.frame with {id,becomes}
+#' @return a 2 column data.frame with {id, becomes}
 #' @export
 #' @importFrom dplyr mutate filter group_by mutate ungroup distinct
 #' @importFrom sf st_set_geometry st_geometry st_buffer st_intersects
 #' @importFrom nhdplusTools get_node
 
-
-
 build_collapse_table = function(network_list,
-                                min_area_sqkm = 3,
-                                min_length_km  = 1){
-
-  bad =  mutate(network_list$flowpaths, hw = ifelse(!id %in% toid, TRUE, FALSE),
-                small = areasqkm < min_area_sqkm | lengthkm < min_length_km) |>
+                                min_area_sqkm  = 3,
+                                min_length_km  = 1) {
+  bad =  mutate(
+    network_list$flowpaths,
+    hw = ifelse(!id %in% toid, TRUE, FALSE),
+    small = areasqkm < min_area_sqkm | lengthkm < min_length_km
+  ) |>
     filter(hw, small) |>
     # needed for VPU02 - DO NOT REMOVE!!!!
     st_cast("MULTILINESTRING")
@@ -40,67 +40,72 @@ build_collapse_table = function(network_list,
     ungroup()   |>
     distinct(id, becomes) %>%
     filter(!id %in% becomes)
+
+  df
 }
 
 #' Collapse Headwaters
 #' @description  This function identifies small (pathlength or area) headwater catchments and
-#' collapses them into the existing network uptil none remain.
+#' collapses them into the existing network until none remain.
 #' Headwaters are those segments in which there are no inflows (!ID %in% toID).
 #' @param network_list  a list containing flowpath and catchment `sf` objects
 #' @param min_area_sqkm The minimum allowable size of the output hydrofabric catchments
 #' @param min_length_km The minimum allowable length of the output hydrofabric flowlines
 #' @param verbose should messages be emitted?
+#' @param cache_file If not NULL results will be written to a provide path (.gpkg)
 #' @return a list containing flowpath and catchment `sf` objects
-#' @export
-#' @importFrom logger log_info log_success
 #' @importFrom dplyr filter left_join mutate bind_rows
 #' @importFrom nhdplusTools get_node
 
-#saveRDS(network_list, "data/tmp-test.rds")
-#network_list = readRDS("data/tmp-test.rds")
+collapse_headwaters = function(network_list,
+                               min_area_sqkm  = 3,
+                               min_length_km  = 1,
+                               verbose = TRUE,
+                               cache_file = NULL) {
 
-collapse_hw = function(network_list,
-                       min_area_sqkm = 3,
-                       min_length_km  = 1,
-                       verbose = TRUE){
+  start <- nrow(network_list$flowpaths)
 
-  start = nrow(network_list$flowpaths)
-
-  mapping_table = build_collapse_table(network_list, min_area_sqkm, min_length_km)
+  mapping_table <- build_collapse_table(network_list, min_area_sqkm, min_length_km)
 
   count = 0
 
-  while(nrow(mapping_table) > 0){
+  while (nrow(mapping_table) > 0) {
+
     count = count + 1
 
-    if(verbose){
-      log_info("Collapsing: {nrow(mapping_table)} features (round {count})")
-    }
+    hyaggregate_log("INFO", glue("Collapsing: {nrow(mapping_table)} features (round {count})"), verbose)
 
     fl = filter(network_list$flowpaths, !id %in% mapping_table$id)
 
-    cat = filter(network_list$catchments, id %in% c(mapping_table$id, mapping_table$becomes)) |>
+    cat = filter(network_list$catchments,
+                 id %in% c(mapping_table$id, mapping_table$becomes)) |>
       left_join(mapping_table, by = "id") |>
       mutate(id = ifelse(is.na(becomes), id, becomes)) |>
       geos_union_polygon_hyaggregate("id") |>
-      bind_rows(filter(network_list$catchments, !id %in% c(mapping_table$id, mapping_table$becomes)))
+      bind_rows(filter(
+        network_list$catchments,
+        !id %in% c(mapping_table$id, mapping_table$becomes)
+      ))
 
-    network_list = check_network_validity(flowpaths = fl, cat = cat) |>
-      prep_for_ngen()
+    network_list = prepare_network(list(flowpaths = fl, catchments = cat))
 
     mapping_table = build_collapse_table(network_list, min_area_sqkm, min_length_km)
   }
 
-  if(verbose){
-    log_success("Collapsed {start - nrow(network_list$flowpaths)} features.")
+  hyaggregate_log("SUCCESS", glue("Collapsed {start - nrow(network_list$flowpaths)} features."), verbose)
+
+  if (!is.null(cache_file)) {
+    write_hydrofabric_package(network_list, cache_file, "hw_agg_cat", "hw_agg_fp")
   }
 
-  network_list
+  return(network_list)
 }
 
 
-#' Prepare Network
-#' This function adds a hydrosequence to the flowpath list element and adds area and length calculations.
+#' @title Prepare Hydrologic Network
+#' @details This function adds an area, length, hydrosequence, streamorder and contributing drainage area
+#' metric to the flowpath list element of network_list.
+#' @details tot_drainage_areasqkm can only be added when there are no NA areas
 #' @param network_list a list with flowpath and catchment data
 #' @return a list containing flowpath and catchment `sf` objects
 #' @export
@@ -109,7 +114,7 @@ collapse_hw = function(network_list,
 #' @importFrom dplyr select
 #' @noRd
 
-prep_for_ngen = function(network_list){
+prepare_network = function(network_list) {
 
   names(network_list$flowpaths)  = tolower(names(network_list$flowpaths))
   names(network_list$catchments) = tolower(names(network_list$catchments))
@@ -120,9 +125,7 @@ prep_for_ngen = function(network_list){
   # Add area and length measures to the network list
   network_list = add_measures(network_list$flowpaths, network_list$catchments)
 
-  if(any(is.na(network_list$flowpaths$areasqkm))){
-    log_warn("NA values found in areasqkm, accumulation not computed.")
-  } else {
+  if (!any(is.na(network_list$flowpaths$areasqkm))) {
     network_list$flowpaths$tot_drainage_areasqkm = calculate_total_drainage_area(st_drop_geometry(
       select(
         network_list$flowpaths,
@@ -133,155 +136,141 @@ prep_for_ngen = function(network_list){
     ))
   }
 
+  network_list$flowpaths$order = network_list$flowpaths %>%
+    st_drop_geometry() %>%
+    flush_prefix(c("id", "toid")) %>%
+    select(ID = id, toID = toid) %>%
+    get_streamorder()
 
-  network_list$flowpaths$order = get_streamorder(st_drop_geometry(
-    select(
-      network_list$flowpaths,
-      ID = id,
-      toID = toid
-    )
-  ))
+  check_network_validity(network_list)
 
-  network_list
 }
 
-#' @title Aggregate Network
-#' @param gf A path to a refactored geofarbric file (see US reference fabric) <-
-#' @param flowpaths an sf object
-#' @param catchments an sf object
+#' @title Aggregate Network to Distribution
+#' @description This function aggregated a network to a desired size distribution while
+#' enforcing minimum flowpath legnths and catchment area. Addtionally a set of explicit nexus
+#' locations can be provided over which the netwrok cannot be aggregated.
+#' @param gf A path to a hydrofabric file (see US reference fabric)
 #' @param ideal_size_sqkm The ideal size of catchments (default = 10 sqkm)
-#' @param min_length_km The minimum allowable length of flowpaths (default = 1 km)
-#' @param min_area_sqkm The minimum allowable size of catchments (default = 3 sqkm)
+#' @param min_length_km The minimum allowable length of flowpath features (default = 1 km)
+#' @param min_area_sqkm The minimum allowable area of catchment features (default = 3 sqkm)
 #' @param outfile of not NULL, where to write the output files
 #' @param verbose print status updates. Default = TRUE
 #' @param overwrite overwrite existing gf file. Default is FALSE
 #' @param nexus_topology should a hy-features cat-->nex topology be enforced? default = TRUE
 #' @param nexus_locations a data.frame with columns specifiying the ID, and the nexus type.
+#' @param log a filepath to write to or booleen (TRUE = print to console; FALSE = no messages)
 #' @return if outfile = TRUE, a file path, else a list object
 #' @export
 #' @importFrom sf st_transform read_sf st_set_crs write_sf st_layers
 #' @importFrom dplyr left_join filter
 #' @importFrom nhdplusTools get_sorted calculate_total_drainage_area get_streamorder
-#' @importFrom logger log_success log_info
+#' @importFrom logger log_success log_info log_appender appender_file appender_console
 
-aggregate_network_to_distribution = function(gf = NULL,
+aggregate_network_to_distribution = function(gpkg = NULL,
+                                             catchment_name = "refactored_divides",
+                                             flowpath_name = "refactored_flowpaths",
                                              ideal_size_sqkm = 10,
                                              min_length_km = 1,
                                              min_area_sqkm  = 3,
-                                             outfile = NULL,
-                                             verbose = TRUE,
-                                             overwrite = FALSE,
                                              nexus_topology = TRUE,
                                              routelink_path = NULL,
-                                             nexus_locations = NULL) {
+                                             nexus_locations = NULL,
+                                             outfile = NULL,
+                                             log = TRUE,
+                                             overwrite = FALSE,
+                                             cache_file = NULL) {
 
-  if (!is.null(gf)) {
+  if(!is.logical(log)){
+    unlink(log)
+    log_appender(appender_file(log))
+    verbose = TRUE
+  } else {
+    verbose = log
+  }
 
-    if(file.exists(outfile) & overwrite){
+  hyaggregate_log("INFO", glue("ideal_size_sqkm --> {ideal_size_sqkm}"), verbose)
+  hyaggregate_log("INFO", glue("min_length_km --> {min_length_km}"), verbose)
+  hyaggregate_log("INFO", glue("min_area_sqkm --> {min_area_sqkm}"), verbose)
+
+  if(!is.null(outfile)){
+    hyaggregate_log("INFO", glue("outfile --> {outfile}"), verbose)
+  }
+
+  hyaggregate_log("INFO", glue("\n\n--- Read in data from {gpkg} ---\n\n"), verbose)
+
+  if (!is.null(gpkg)) {
+
+    if (file.exists(outfile) & overwrite) {
       unlink(outfile)
-    } else if(file.exists(outfile)){
-      warning(outfile, " already exists and overwrite is FALSE", call. = FALSE)
+    } else if (file.exists(outfile)) {
+      hyaggregate_log("WARN", glue("{outfile} already exists and overwrite is FALSE"), verbose)
       return(outfile)
     }
 
-    # Make sure needed layers exist
-    if (all(!all(c("reconciled", "divides") %in% sf::st_layers(gf)$name),
-        !all(c("refactored_flowpaths", "refactored_divides") %in% sf::st_layers(gf)$name))) {
-      stop("Make sure you are using a refactored product!")
-    }
+    network_list = read_hydrofabric_package(gpkg,
+                                            catchment_name = catchment_name,
+                                            flowpath_name = flowpath_name,
+                                            crs = 5070)
 
-    # Read Data into R
-    flowpaths  <- tryCatch({
-      st_transform(read_sf(gf, "refactored_flowpaths"), 5070)
-    }, error = function(e){
-      st_transform(read_sf(gf, "reconciled"), 5070)
-    })
-
-    catchments  <- tryCatch({
-      st_transform(read_sf(gf, "refactored_divides"), 5070)
-    }, error = function(e){
-      st_transform(read_sf(gf, "divides"), 5070)
-    })
-
-    if(!is.null(nexus_locations)){
-      flowpaths  = left_join(flowpaths,  nexus_locations, by = "ID")
-      catchments = left_join(catchments, nexus_locations, by = "ID")
+    if (!is.null(nexus_locations)) {
+      network_list$flowpaths  = left_join(network_list$flowpaths,  nexus_locations, by = "ID")
+      network_list$catchments = left_join(network_list$catchments, nexus_locations, by = "ID")
     } else {
-        flowpaths$type  = NA
-        catchments$type = NA
+      network_list$flowpaths$type  = NA
+      network_list$flowpaths$value  = NA
     }
   }
 
   # Create a network list and check if DAG and connected
-  network_list <- check_network_validity(flowpaths = flowpaths, cat = catchments) %>%
-    prep_for_ngen()
+  network_list <- prepare_network(network_list) %>%
+    drop_extra_features(verbose)
+
+
+  if (!is.null(cache_file)) {
+    write_hydrofabric_package(network_list, cache_file, "base_cat", "base_fp")
+  }
 
   # Perform first aggregation step!
+  hyaggregate_log("INFO", "\n\n---  Aggregate Along Mainstem ---\n\n", verbose)
+
   network_list = aggregate_along_mainstems(network_list,
                                            ideal_size_sqkm,
                                            min_area_sqkm,
                                            min_length_km,
-                                           verbose = verbose)
+                                           verbose = verbose,
+                                           cache_file = cache_file)
 
-  network_list = collapse_hw(network_list,
-                             min_area_sqkm,
-                             min_length_km,
-                             verbose = verbose)
+  hyaggregate_log("INFO", "\n\n--- Collapse Network Inward ---\n\n", verbose)
 
+  network_list  = collapse_headwaters(network_list,
+                                      min_area_sqkm,
+                                      min_length_km,
+                                      verbose = verbose,
+                                      cache_file = cache_file)
 
-  if (nexus_topology) {
+  if (nexus_topology) { network_list = apply_nexus_topology(network_list, verbose) }
 
-    if (verbose) {
-      log_info("Applying HY_feature topology...")
-    }
+  if (!is.null(routelink_path)) {
+    hyaggregate_log("INFO", glue("\n\n--- Creating Routing Table based on: {routelink_path} ---\n\n "), verbose)
 
-    network_list$flowpaths           <- assign_nex_ids(fline = network_list$flowpaths)
-
-    network_list$catchment_edge_list <- get_catchment_edges_terms(network_list$flowpaths)
-
-    network_list$flowpath_edge_list  <- get_catchment_edges_terms(network_list$flowpaths,
-                                                                  catchment_prefix = 'wb-')
-
-    network_list$nex =  left_join(
-      get_nexus(fline = network_list$flowpaths),
-      network_list$catchment_edge_list,
-      by = "id"
-    )
-
-    network_list$catchments <- get_catchment_data(network_list$catchments, network_list$catchment_edge_list)
-
-    network_list$flowpaths  <- get_flowpath_data(fline = network_list$flowpaths, catchment_edge_list = network_list$catchment_edge_list)
+    network_list$waterbody_attributes <-
+      length_average_routelink(flowpaths = network_list$flowpaths,
+                               rl_path = routelink_path)
   }
-
-
-  if(!is.null(routelink_path)){
-      if (verbose) {
-        log_info("Creating Routeing Table based on: {routelink_path}")
-      }
-
-      network_list$waterbody_attributes =  length_average_routelink(flowpaths = network_list$flowpaths,
-                                                                    rl_path = get_routelink_path())
-
-      if (verbose) {
-        log_success("Done!")
-      }
-  }
-
 
 
   if (is.null(outfile)) {
     return(network_list)
   } else {
-    if (verbose) {
-      log_info("Writing data to: {outfile}")
-    }
 
-    write_sf(network_list$flowpaths,  outfile, "aggregate_flowpaths")
-    write_sf(network_list$catchments, outfile, "aggregate_divides")
+    hyaggregate_log("INFO", glue("--- Writing data to: {outfile} ---\n\n"), verbose)
 
-    if (!is.null(network_list$nex)) {
-      write_sf(network_list$nex, outfile, "nexus")
-    }
+    write_hydrofabric_package(network_list, outfile,
+                              catchment_name  = "aggregate_divides",
+                              flowpath_name   ="aggregate_flowpaths")
+
+    if (!is.null(network_list$nex)) { write_sf(network_list$nex, outfile, "nexus") }
 
     if (!is.null(network_list$flowpath_edge_list)) {
       write_sf(network_list$flowpath_edge_list, outfile, "flowpath_edge_list")
@@ -291,12 +280,10 @@ aggregate_network_to_distribution = function(gf = NULL,
       write_sf(network_list$waterbody_attributes, outfile, "flowpath_attributes")
     }
 
-    if (verbose) {
-      log_success("Done!")
-    }
-
-    return(outfile)
+    hyaggregate_log("SUCCESS", "Done!", verbose)
   }
+
+  log_appender(appender_console)
 }
 
 
@@ -319,33 +306,45 @@ aggregate_along_mainstems = function(network_list,
                                      ideal_size_sqkm,
                                      min_area_sqkm,
                                      min_length_km,
-                                     verbose = TRUE) {
+                                     verbose = TRUE,
+                                     cache_file = NULL) {
 
   # Requires having a set, id, toid, levelpathid, hydroseq, member_comid, type, n
   index_table = network_list$flowpaths %>%
     st_drop_geometry() %>%
     group_by(.data$levelpathid) %>%
     arrange(.data$hydroseq) %>%
-    mutate(ind = cs_group(.data$areasqkm, .data$lengthkm, .data$type, ideal_size_sqkm, min_area_sqkm, min_length_km)) %>%
+    mutate(
+      ind = cs_group(
+        .data$areasqkm,
+        .data$lengthkm,
+        .data$type,
+        ideal_size_sqkm,
+        min_area_sqkm,
+        min_length_km
+      )
+    ) %>%
     ungroup()   %>%
     group_by(.data$levelpathid, .data$ind) %>%
     mutate(set = cur_group_id(), n = n()) %>%
     ungroup() %>%
-    select(set, id, toid, levelpathid, hydroseq, member_comid, type, n)
+    select(set, id, toid, levelpathid, hydroseq, member_comid, type, value, n)
 
   v = aggregate_sets(
     flowpaths  = filter(network_list$flowpaths,  id %in% index_table$id),
     cat        = filter(network_list$catchments, id %in% index_table$id),
     index_table
-  )
+  ) %>%
+    prepare_network()
 
-  v = check_network_validity(flowpaths = v$flowpaths, cat = v$catchments) %>%
-    prep_for_ngen()
+  hyaggregate_log("SUCCESS",
+                  glue("Merged to idealized catchment size of {ideal_size_sqkm} sqkm: {nrow(network_list$flowpaths) - nrow(v$flowpaths)} features removed"),
+                  verbose)
 
-  if (verbose) {
-    log_info("Merged to idealized catchment size of {ideal_size_sqkm} sqkm: {nrow(network_list$flowpath) - nrow(v$flowpath)} features removed")
+  if (!is.null(cache_file)) {
+    write_hydrofabric_package(v, cache_file, "mainstem_agg_cat", "mainstem_agg_fp")
   }
 
-  v
+  return(v)
 
 }

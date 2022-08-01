@@ -1,3 +1,100 @@
+describe_hydrofabric = function(network_list, verbose = TRUE){
+
+  xx = sapply(network_list, nrow)
+
+  if(xx[[1]] != xx[[2]]){
+    hyaggregate_log( "WARN",
+                     glue("{xx[1]} {names(xx)[1]} vs. {xx[2]} {names(xx)[2]}"),
+                     verbose)
+
+    return(FALSE)
+  } else {
+    hyaggregate_log( "INFO",
+                     glue("{xx[1]} features"),
+                     verbose)
+    return(FALSE)
+  }
+}
+
+hyaggregate_log = function(level, message, emit = TRUE){ if(emit){ log_level(level, message) } }
+
+
+drop_extra_features = function(network_list, verbose){
+
+  cond = describe_hydrofabric(network_list, verbose)
+
+  if(!cond){
+
+    bad_fps = filter(network_list$flowpaths, !id %in% network_list$catchments$id)$id
+
+    if(length(bad_fps) > 0) {
+      hyaggregate_log("WARN", glue("Removing flowpath(s): {paste(bad_fps, collapse = ', ')}"), emit = verbose)
+    }
+
+    bad_cats = filter(network_list$catchments, !id %in% network_list$flowpaths$id)$id
+
+    if(length(bad_cats) > 0) {
+      hyaggregate_log("WARN", glue("Removing catchment(s): {paste(bad_cats, collapse = ', ')}"), emit = verbose)
+    }
+
+    network_list = list(flowpaths = filter(network_list$flowpaths, id %in% network_list$catchments$id),
+                        catchments = filter(network_list$catchments, id %in% network_list$flowpaths$id))
+  }
+
+  return(network_list)
+
+}
+
+
+#' Read Catchments and Flowpaths from Geopackage
+#' Convienence function for reading two layers into a list
+#' @param gpkg path to geopackage
+#' @param catchment_name name of catchment layer
+#' @param flowpath_name name of flowpath layer
+#' @param crs desired CRS, if NULL they stay as read
+#' @return list
+#' @export
+
+read_hydrofabric_package = function(gpkg,
+                                    catchment_name,
+                                    flowpath_name,
+                                    crs = NULL){
+
+  out = list()
+
+  if(layer_exists(gpkg, catchment_name)){
+    cat = read_sf(gpkg, catchment_name)
+
+    if(is.null(crs)){ cat = st_transform(cat, crs) }
+
+    out[["catchments"]] <- cat
+  }
+
+  if(layer_exists(gpkg, flowpath_name)){
+    fl = read_sf(gpkg, flowpath_name)
+
+    if(is.null(crs)){ fl = st_transform(fl, crs) }
+
+    out[["flowpaths"]] <- fl
+  }
+
+  return(out)
+
+}
+
+write_hydrofabric_package = function(network_list,
+                                     outfile,
+                                     catchment_name,
+                                     flowpath_name,
+                                     verbose){
+
+  hyaggregate_log("SUCCESS", glue("Writing {flowpath_name} & {catchment_name} to {outfile}"), verbose)
+  write_sf(network_list$flowpaths, outfile, flowpath_name)
+  write_sf(network_list$catchments, outfile, catchment_name)
+
+}
+
+
 #' Flush existing ID prefixes
 #' Given a data object and column, remove a prefix and adjoining "-"
 #' @param input input data object
@@ -104,10 +201,13 @@ aggregate_sets = function(flowpaths, cat, index_table) {
     group_by(set) %>%
     mutate(member_comid  = paste(.data$member_comid, collapse = ","),
            type  = paste(.data$type[!is.na(.data$type)], collapse = ","),
-           type = ifelse(.data$type == "", NA, .data$type)) %>%
+           type = ifelse(.data$type == "", NA, .data$type),
+           value = paste(.data$value[!is.na(.data$value)], collapse = ","),
+           value = ifelse(.data$value == "", NA, .data$value)
+           ) %>%
     slice_max(hydroseq) %>%
     ungroup() %>%
-    select(set, id = toid, levelpathid, member_comid, type) %>%
+    select(set, id = toid, levelpathid, member_comid, type, value) %>%
     left_join(select(index_table, toset = set, id), by = "id") %>%
     select(-id)
 
@@ -153,11 +253,10 @@ aggregate_sets = function(flowpaths, cat, index_table) {
 
   catchments_out$toid = ifelse(is.na(catchments_out$toid), 0, catchments_out$toid)
 
-  check_network_validity(flowpaths = flowpaths_out, cat = catchments_out) %>%
-    prep_for_ngen()
+  list(flowpaths = flowpaths_out, catchments = catchments_out)
 }
 
-##' @title Fast LINESTRING union
+#' @title Fast LINESTRING union
 #' @description Wayyyy faster then either data.table, or sf based line merging
 #' @param lines lines to merge
 #' @param ID ID to merge over
@@ -406,15 +505,19 @@ middle_massage = function(x, ind, thres){
 
 #' Check Network Validity
 #' **INTERNAL** function that validates a flowpath and catchment network
-#' @param flowpaths a LINESTRING `sf` flowpaths object
-#' @param cat a POLYGON `sf` catchments object
+
 #' @param term_cut cutoff integer to define terminal IDs
 #' @return a list containing flowline and catchment `sf` objects
 #' @export
 #' @importFrom dplyr mutate select left_join
 #' @importFrom sf st_drop_geometry
 
-check_network_validity     <- function(flowpaths, cat, term_cut = 1e9, check = TRUE){
+check_network_validity     <- function(network_list,
+                                       term_cut = 1e9,
+                                       check = TRUE){
+
+  flowpaths = network_list$flowpaths
+  cat = network_list$catchments
 
   names(flowpaths) = tolower(names(flowpaths))
   names(cat) = tolower(names(cat))
@@ -474,11 +577,13 @@ add_grid_mapping = function(gpkg = NULL,
                                  catchment_name = "aggregate_divides",
                                  template = '/Users/mjohnson/Downloads/AORC-OWP_2012063021z.nc4',
                                  grid_name = NULL,
-                                 add_to_gpkg = TRUE){
+                                 add_to_gpkg = TRUE,
+                                 progress = TRUE){
 
   out = weight_grid(rast(template),
                     geom = sf::read_sf(gpkg, catchment_name),
-                    ID = "id")
+                    ID = "id",
+                    progress = progress)
 
   if(add_to_gpkg){
     if(is.null(grid_name)){ stop("To write this file to a gpkg, a `grid_name` must be provided ...") }
@@ -536,19 +641,16 @@ nexus_from_poi = function(gpkg,
   nexus_locations  = read_sf(gpkg, "mapped_POIs") |>
     st_drop_geometry() |>
     select(ID, paste0("Type_", type)) %>%
-    dplyr::mutate_at(dplyr::vars(matches("Type_")), as.character) |>
-    tidyr::pivot_longer(-ID) |>
+    mutate_at(vars(matches("Type_")), as.character) |>
+    pivot_longer(-ID) |>
     filter(!is.na(value)) |>
     mutate(name = gsub("Type_", "", name)) |>
     group_by(ID) %>%
-    dplyr::summarize(type = paste(unique(name), collapse = ", "))
+    summarize(type = paste(name, collapse = ", "),
+              value = paste(value,  collapse = ", "))
 
-  if(verbose){
-    logger::log_info("{nrow(nexus_locations)} distinct POIs found.")
-    print(data.frame(table(nexus_locations$type)))
-  }
+  hyaggregate_log("INFO", "{nrow(nexus_locations)} distinct POIs found.", verbose)
 
   nexus_locations
-
 }
 

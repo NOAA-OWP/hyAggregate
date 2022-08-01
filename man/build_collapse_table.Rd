@@ -2,7 +2,7 @@
 % Please edit documentation in R/aggregation.R
 \name{build_collapse_table}
 \alias{build_collapse_table}
-\title{Build Collapse Table}
+\title{Build Headwater Collapse Table}
 \usage{
 build_collapse_table(network_list, min_area_sqkm = 3, min_length_km = 1)
 }
@@ -14,10 +14,10 @@ build_collapse_table(network_list, min_area_sqkm = 3, min_length_km = 1)
 \item{min_length_km}{The minimum allowable length of the output hydrofabric flowlines}
 }
 \value{
-a 2 column data.frame with {id,becomes}
+a 2 column data.frame with {id, becomes}
 }
 \description{
-This function identifies small (pathlength or area) headwater catchments and returns a data.frame
-with the current ID and the the feature ID it should collapse into (becomes).
-Headwaters are those segments in which there are no inflows (!ID \%in\% toID).
+Identifies small (pathlength or area) headwater catchments and returns a data.frame
+with the current ID and the feature ID it should collapse into (becomes).
+Headwaters are segments in which there are no inflows (!ID \%in\% toID).
 }

@@ -9,7 +9,8 @@ aggregate_along_mainstems(
   ideal_size_sqkm,
   min_area_sqkm,
   min_length_km,
-  verbose = TRUE
+  verbose = TRUE,
+  cache_file = NULL
 )
 }
 \arguments{

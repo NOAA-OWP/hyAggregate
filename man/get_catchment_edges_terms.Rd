@@ -21,7 +21,7 @@ get_catchment_edges_terms(
 
 \item{catchment_prefix}{character prefix for catchment IDs}
 
-\item{term_cut}{terminal IDs begin above a defiend threshold}
+\item{term_cut}{terminal IDs begin above a defined threshold}
 }
 \value{
 data.frame

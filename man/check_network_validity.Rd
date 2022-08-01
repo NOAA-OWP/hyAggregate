@@ -5,13 +5,9 @@
 \title{Check Network Validity
 \strong{INTERNAL} function that validates a flowpath and catchment network}
 \usage{
-check_network_validity(flowpaths, cat, term_cut = 1e+09, check = TRUE)
+check_network_validity(network_list, term_cut = 1e+09, check = TRUE)
 }
 \arguments{
-\item{flowpaths}{a LINESTRING \code{sf} flowpaths object}
-
-\item{cat}{a POLYGON \code{sf} catchments object}
-
 \item{term_cut}{cutoff integer to define terminal IDs}
 }
 \value{

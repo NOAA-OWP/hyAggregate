@@ -1,10 +1,70 @@
+#' Apply Nexus Topology
+#' This function enforces the nexus-->flowpath topology and adds a catchment and flowpath
+#' edgelist to the network_list object. Additonally, nexus locations are identified and
+#' added as well.
+#' @param network_list  a list containing flowpath and catchment `sf` objects
+#' @param nexus_prefix  character prefix for nexus IDs
+#' @param terminal_nexus_prefix character prefix for terminal nexus IDs
+#' @param catchment_prefix character prefix for catchment IDs
+#' @param waterbody_prefix character prefix for catchment IDs
+#' @param term_cut terminal IDs begin above a defined threshold
+#' @return list
+#' @export
+
+apply_nexus_topology = function(network_list,
+                                nexus_prefix = "nex-",
+                                terminal_nexus_prefix = "tnex-",
+                                catchment_prefix = "cat-",
+                                waterbody_prefix = "wb-",
+                                term_cut = 1e9,
+                                verbose = TRUE){
+
+  hyaggregate_log("INFO", "\n\n--- Applying HY_feature topology --- \n\n", verbose)
+
+  network_list$flowpaths     <- assign_nex_ids(fline = network_list$flowpaths, term_cut = term_cut)
+
+  network_list$catchment_edge_list <- get_catchment_edges_terms(flowpaths = network_list$flowpaths,
+                                                                nexus_prefix = nexus_prefix,
+                                                                terminal_nexus_prefix = terminal_nexus_prefix ,
+                                                                catchment_prefix = catchment_prefix,
+                                                                term_cut = term_cut )
+
+  network_list$flowpath_edge_list  <-
+    get_catchment_edges_terms(network_list$flowpaths,
+                              catchment_prefix = waterbody_prefix)
+
+  network_list$nex =  left_join(
+    get_nexus(fline = network_list$flowpaths,
+              term_cut = term_cut,
+              nexus_prefix = nexus_prefix,
+              terminal_nexus_prefix = terminal_nexus_prefix),
+    network_list$catchment_edge_list,
+    by = "id"
+  )
+
+  hyaggregate_log("INFO", "Created {nrow(network_list$nex)} nexus locations", verbose)
+
+  network_list$catchments <- get_catchment_data(network_list$catchments,
+                                                network_list$catchment_edge_list,
+                                                catchment_prefix = catchment_prefix)
+
+  network_list$flowpaths  <- get_flowpath_data( fline = network_list$flowpaths,
+                                                catchment_edge_list = network_list$catchment_edge_list,
+                                                waterbody_prefix = waterbody_prefix,
+                                                catchment_prefix = catchment_prefix)
+
+  network_list
+}
+
+
+
 #' Get catchment edge list
 #' @description get a edge list for catchments
 #' @param flowpaths  sf data.frame containing hyRefactor or hyAggregate output.
 #' @param nexus_prefix  character prefix for nexus IDs
 #' @param terminal_nexus_prefix character prefix for terminal nexus IDs
 #' @param catchment_prefix character prefix for catchment IDs
-#' @param term_cut terminal IDs begin above a defiend threshold
+#' @param term_cut terminal IDs begin above a defined threshold
 #' @return data.frame
 #' @export
 #' @importFrom sf st_drop_geometry
@@ -92,7 +152,7 @@ get_nexus <- function(fline, term_cut = 1e9,
 
   nexus$id <- fline$to_nID
   nexus$type <- ifelse(is.na(fline$type), "infered", fline$type)
-  nexus$type <- ifelse(nexus$id > term_cut, "terminal", nexus$type)
+  nexus$type_id <- fline$value
 
   nexus$id = ifelse(nexus$id >= term_cut, paste0(terminal_nexus_prefix, nexus$id), paste0(nexus_prefix, nexus$id))
 
@@ -118,92 +178,6 @@ check_nexus <- function(fline) {
   fline
 
 }
-
-#  Old Get Nexus
-#' @param fline sf data.frame NHDPlus Flowlines or hyRefactor output.
-#' @param nexus_prefix character prefix for nexus IDs
-#' @param terminal_nexus_prefix character prefix for ternimal nexus IDs
-#' @importFrom sf st_coordinates st_as_sf st_crs st_cast
-#' @importFrom dplyr group_by filter ungroup select n row_number rename %>%
-#' @export
-
-get_nexus_old = function(fline,
-                     term_cut = 1e9,
-                     nexus_prefix = "nex-",
-                     terminal_nexus_prefix = "tnx-") {
-
-  fline = st_cast(fline, "MULTILINESTRING")
-  fline = flush_prefix(fline, "id")
-  fline = flush_prefix(fline, "toid")
-
-  term_node = filter(fline, toid > term_cut |
-                       toid == 0 | is.na(toid)) %>%
-    rename_geometry("geometry") %>%
-    mutate(geometry = get_node(., "end")$geometry) %>%
-    select(id = toid, type)
-
-  nex = fline %>%
-    left_join(st_drop_geometry(select(
-      fline, toid = id, ds_toID = toid
-    )), by = c("toid")) %>%
-    filter(id %in% unique(toid)) %>%
-    rename_geometry("geometry") %>%
-    mutate(geometry = get_node(., "start")$geometry) %>%
-    select(id, toid, type)
-
-  imap = st_intersects(nex, fline)
-
-  df = data.frame(id       = rep(nex$id, times = lengths(imap)),
-                  type     = rep(nex$type, times = lengths(imap)),
-                  touches  = fline$id[unlist(imap)]) %>%
-    mutate(cond = ifelse(id == touches, "move", "aaa")) %>%
-    group_by(id) %>%
-    arrange(cond) %>%
-    slice_head(n = 1) %>%
-    ungroup()
-
-  to_move = filter(fline, id %in% filter(df, cond == "move")$id) %>%
-    select(id) %>%
-    rename_geometry("geometry")
-
-  to_keep = filter(nex, id %in% filter(df, cond != "move")$id) %>%
-    select(id) %>%
-    rename_geometry("geometry")
-
-  fp_ends = bind_rows(
-    select(fline, id, hydroseq, toid, type) %>%
-      rename_geometry("geometry") %>%
-      mutate(geometry = get_node(., "end")$geometry, pos = "end"),
-    select(fline, id, hydroseq, toid) %>%
-      rename_geometry("geometry") %>%
-      mutate(geometry = get_node(., "start")$geometry, pos = "start")
-  )
-
-  imap = st_intersects(to_move, fp_ends)
-
-  df = data.frame(
-    id       = rep(to_move$id, times = lengths(imap)),
-    touches  = fp_ends$id[unlist(imap)],
-    touches  = fp_ends$type[unlist(imap)],
-    pos      = fp_ends$pos[unlist(imap)],
-    hs       = fp_ends$hydroseq[unlist(imap)]
-  ) %>%
-    left_join(rename(fp_ends, touches = id), by = c('touches', 'pos')) %>%
-    group_by(id) %>%
-    filter(id == toid) %>%
-    dplyr::slice_max(hydroseq) %>%
-    ungroup() %>%
-    st_as_sf() %>%
-    select(id, type) %>%
-    bind_rows(to_keep) %>%
-    bind_rows(term_node) %>%
-    mutate(type = ifelse(is.na(.data$type), "implied", .data$type))
-
-  df$id = ifelse(df$id >= term_cut, paste0(terminal_nexus_prefix, df$id), paste0(nexus_prefix, df$id))
-
-  df
-}
-
 
 
 #' Get waterbody edge list

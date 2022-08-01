@@ -2,29 +2,35 @@
 % Please edit documentation in R/aggregation.R
 \name{aggregate_network_to_distribution}
 \alias{aggregate_network_to_distribution}
-\title{Aggregate Network}
+\title{Aggregate Network to Distribution}
 \usage{
 aggregate_network_to_distribution(
-  gf = NULL,
+  gpkg = NULL,
+  catchment_name = "refactored_divides",
+  flowpath_name = "refactored_flowpaths",
   ideal_size_sqkm = 10,
   min_length_km = 1,
   min_area_sqkm = 3,
+  nexus_topology = TRUE,
+  routelink_path = NULL,
+  nexus_locations = NULL,
   outfile = NULL,
   verbose = TRUE,
   overwrite = FALSE,
-  nexus_topology = TRUE,
-  routelink_path = NULL,
-  nexus_locations = NULL
+  cache_file = NULL,
+  log_file = NULL
 )
 }
 \arguments{
-\item{gf}{A path to a refactored geofarbric file (see US reference fabric) <-}
-
 \item{ideal_size_sqkm}{The ideal size of catchments (default = 10 sqkm)}
 
-\item{min_length_km}{The minimum allowable length of flowpaths (default = 1 km)}
+\item{min_length_km}{The minimum allowable length of flowpath features (default = 1 km)}
 
-\item{min_area_sqkm}{The minimum allowable size of catchments (default = 3 sqkm)}
+\item{min_area_sqkm}{The minimum allowable area of catchment features (default = 3 sqkm)}
+
+\item{nexus_topology}{should a hy-features cat-->nex topology be enforced? default = TRUE}
+
+\item{nexus_locations}{a data.frame with columns specifiying the ID, and the nexus type.}
 
 \item{outfile}{of not NULL, where to write the output files}
 
@@ -32,17 +38,13 @@ aggregate_network_to_distribution(
 
 \item{overwrite}{overwrite existing gf file. Default is FALSE}
 
-\item{nexus_topology}{should a hy-features cat-->nex topology be enforced? default = TRUE}
-
-\item{nexus_locations}{a data.frame with columns specifiying the ID, and the nexus type.}
-
-\item{flowpaths}{an sf object}
-
-\item{catchments}{an sf object}
+\item{gf}{A path to a hydrofabric file (see US reference fabric)}
 }
 \value{
 if outfile = TRUE, a file path, else a list object
 }
 \description{
-Aggregate Network
+This function aggregated a network to a desired size distribution while
+enforcing minimum flowpath legnths and catchment area. Addtionally a set of explicit nexus
+locations can be provided over which the netwrok cannot be aggregated.
 }

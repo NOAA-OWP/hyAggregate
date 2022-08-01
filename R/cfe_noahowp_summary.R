@@ -35,7 +35,7 @@ correct_nwm_spatial = function(path, ...){
 #' @param precision the precision of the computations
 #' @return NULL
 #' @export
-#' @importFrom sf read_sf st_drop_geometry
+#' @importFrom sf read_sf st_drop_geometry st_is_empty
 #' @importFrom zonal weight_grid execute_zonal
 #' @importFrom dplyr select mutate filter bind_cols rename inner_join group_by summarize across everything right_join
 #' @importFrom tidyr unnest_longer
@@ -71,14 +71,18 @@ aggregate_cfe_noahowp = function(gpkg = NULL,
 
   cats = read_sf(gpkg, catchment_name)
 
+  filter(cats, st_is_empty(cats))
+
   if(is.null(dir)){
     stop("dir cannot be NULL")
   }
 
   log_info("Getting NWM grid data")
+
   data = get_nwm_grids(dir = dir, spatial = TRUE)
 
   log_info("Building weighting grid from ", terra::sources(data)[1])
+
   nwm_w_1000m = weight_grid(data, cats,  ID = ID, progress = FALSE)
 
   if(add_weights_to_gpkg){
