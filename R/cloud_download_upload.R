@@ -1,3 +1,51 @@
+#' Authenticated Upload to s3
+#' You must authenticate s3 for this working session to use this function. Also,
+#' the aws.s3 package is required on your machine and is NOT a hyAggregate dependency.
+#' @param path a path to a file or directory
+#' @param bucket the s3 bucket to upload to
+#' @param prefix an optional file object prefix (think of sub directory)
+#' @param verbose should messages be emitted?
+
+upload_to_aws = function(path,
+                         bucket = "formulations-dev",
+                         prefix = "hf_1.0",
+                         verbose = TRUE){
+
+  check_pkg("aws.s3")
+
+  prefix = gsub("/", "", prefix)
+
+  if(!file_test("-f", path)){
+    f = list.files(path,
+                   full.names = TRUE,
+                   recursive = TRUE)
+
+    o = file.path(prefix, basename(path), gsub("/", "", gsub(path, "", f)))
+
+    fin = lapply(1:length(f), function(i) {
+      aws.s3::put_object(file = f[i],
+                         object = o[i],
+                         bucket = bucket,
+                         multipart = TRUE,
+                         show_progress = verbose)
+    })
+
+  } else {
+
+    o = file.path(prefix, basename(path))
+
+    aws.s3::put_object(file = path,
+                       object = o,
+                       bucket = bucket,
+                       multipart = TRUE,
+                       show_progress = verbose)
+  }
+
+  hyaggregate_log("SUCCESS", glue("{length(o)} file(s) uplaoded to s3!"), verbose)
+
+}
+
+
 #' Find Processing Unit (Vector or Raster)
 #' @param location sf object
 #' @param pu either "vpu" or "rpu" (default is "vpu")
@@ -73,7 +121,6 @@ get_reference_fabric = function(VPU = "01",
         destinations = out,
         overwrite_file = TRUE
       )}, error = function(e){
-        # message("need authentication... put this in a browser to download (or authenticate sbtools):\n\n", find$url)
         httr::GET(find$url, httr::write_disk(out, overwrite = TRUE))
       })
   }
@@ -97,6 +144,7 @@ get_reference_fabric = function(VPU = "01",
 
 upload_aggregate_gpkg = function(x, item = "629a4246d34ec53d276f446d",
                                  username, password) {
+
   authenticate_sb(username, password)
   item_append_files(item, x)
 }
