@@ -1,3 +1,35 @@
+#' Generate Lookup table for Aggregated Nextwork
+#' @param gpkg to the aggregated network. The look up table will be added here as a layer called "lookup_table"
+#' @param flowpath_name the name of the flowpath layer in gpkg
+#' @param refactored_fabric the gpkg for the corresponding VPU reference fabric
+#' @return data.frame
+#' @export
+#' @importFrom sf read_sf st_drop_geometry write_sf
+#' @importFrom dplyr mutate select full_join
+#' @importFrom tidyr unnest
+
+generate_lookup_table = function(gpkg = NULL,
+                                 flowpath_name = "aggregate_flowpaths",
+                                 refactored_fabric = NULL){
+
+
+  if(is.null(gpkg) | is.null(refactored_fabric)){
+    stop("hydrofabrics must be provided.")
+  }
+
+  lu = read_sf(gpkg, flowpath_name) |>
+    st_drop_geometry() |>
+    select(aggregated_flowpath_ID = id, member_COMID = member_comid, aggregated_divide_ID = realized_catchment) |>
+    mutate(member_COMID = strsplit(member_COMID, ",")) |>
+    unnest(col = 'member_COMID') |>
+    full_join(read_sf(refactored_fabric, "lookup_table"), by = "member_COMID")
+
+  write_sf(lu, gpkg, "lookup_table")
+
+
+  return(lu)
+}
+
 describe_hydrofabric = function(network_list, verbose = TRUE){
 
   xx = sapply(network_list, nrow)
@@ -15,6 +47,17 @@ describe_hydrofabric = function(network_list, verbose = TRUE){
     return(FALSE)
   }
 }
+
+
+
+#' HyAggregate logging shorthand
+#'
+#' @param level
+#' @param message
+#' @param emit
+#' @return log message
+#' @export
+#' @importFrom logger log_level
 
 hyaggregate_log = function(level, message, emit = TRUE){ if(emit){ log_level(level, message) } }
 
@@ -578,12 +621,21 @@ add_grid_mapping = function(gpkg = NULL,
                                  template = '/Users/mjohnson/Downloads/AORC-OWP_2012063021z.nc4',
                                  grid_name = NULL,
                                  add_to_gpkg = TRUE,
-                                 progress = TRUE){
+                                 log = TRUE
+                            ){
+
+  if(!is.logical(log)){
+    log_appender(appender_file(log))
+    verbose = TRUE
+  } else {
+    log_appender(appender_console)
+    verbose = log
+  }
 
   out = weight_grid(rast(template),
                     geom = sf::read_sf(gpkg, catchment_name),
                     ID = "id",
-                    progress = progress)
+                    progress = verbose)
 
   if(add_to_gpkg){
     if(is.null(grid_name)){ stop("To write this file to a gpkg, a `grid_name` must be provided ...") }
@@ -592,6 +644,9 @@ add_grid_mapping = function(gpkg = NULL,
     return(out)
   }
 
+  hyaggregate_log("INFO", glue('Build AORC weight grid from {template}'),  verbose)
+
+  log_appender(appender_console)
 
 }
 
