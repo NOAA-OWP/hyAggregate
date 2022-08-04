@@ -13,7 +13,7 @@ upload_to_aws = function(path,
 
   check_pkg("aws.s3")
 
-  prefix = gsub("/", "", prefix)
+  prefix = gsub("/$", "", prefix)
 
   if(!file_test("-f", path)){
     f = list.files(path,

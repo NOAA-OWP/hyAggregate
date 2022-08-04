@@ -15,10 +15,9 @@ aggregate_network_to_distribution(
   routelink_path = NULL,
   nexus_locations = NULL,
   outfile = NULL,
-  verbose = TRUE,
+  log = TRUE,
   overwrite = FALSE,
-  cache_file = NULL,
-  log_file = NULL
+  cache_file = NULL
 )
 }
 \arguments{
@@ -34,11 +33,13 @@ aggregate_network_to_distribution(
 
 \item{outfile}{of not NULL, where to write the output files}
 
-\item{verbose}{print status updates. Default = TRUE}
+\item{log}{a filepath to write to or booleen (TRUE = print to console; FALSE = no messages)}
 
 \item{overwrite}{overwrite existing gf file. Default is FALSE}
 
 \item{gf}{A path to a hydrofabric file (see US reference fabric)}
+
+\item{verbose}{print status updates. Default = TRUE}
 }
 \value{
 if outfile = TRUE, a file path, else a list object

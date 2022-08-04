@@ -11,10 +11,11 @@ write_geojson <- function(x, file) {
            layer_options = c("ID_FIELD=id", "ID_TYPE=String"))
 }
 
-
 #' @title Write NextGen files from GPKG
 #' @param gpkg path to geopackage
+#' @param dir directory to write data to, if NULL, then its written at the same level as the gpkg
 #' @param catchment_name name of catchment layer
+#' @param flowpath_name name of flowpath layer
 #' @param flowpath_name name of flowpath layer
 #' @return NULL
 #' @export
@@ -26,9 +27,12 @@ write_geojson <- function(x, file) {
 #' @importFrom tidyr unnest_longer
 
 write_ngen_dir = function(gpkg,
+                          dir = NULL,
                           catchment_name = "aggregate_divides",
                           flowpath_name  = "aggregate_flowpaths",
-                          export_shapefiles = FALSE){
+                          export_shapefiles = FALSE,
+                          verbose = TRUE,
+                          overwrite = FALSE){
 
   if(!layer_exists(gpkg, catchment_name)){
     stop("Need ", catchment_name, " in gpkg", call. = FALSE)
@@ -47,54 +51,69 @@ write_ngen_dir = function(gpkg,
     stop("Need ", "flowpath_edge_list", " in gpkg", call. = FALSE)
   }
 
-
   if(!all(layer_exists(gpkg, "flowpath_attributes") |  layer_exists(gpkg, "flowpath_params"))){
     stop("Need ", "flowpath_attributes", " in gpkg", call. = FALSE)
   }
 
-  dir = strsplit(gpkg, "\\.")[[1]][1]
+  if(is.null(dir)){ dir = strsplit(gpkg, "\\.")[[1]][1] }
+
   dir.create(dir, showWarnings = FALSE, recursive = TRUE)
-  log_info("Writing to: {dir}")
 
-  write_geojson(
-    read_sf(gpkg, catchment_name),
-    file.path(dir, "catchment_data.geojson")
-  )
+  hyaggregate_log("INFO", glue("Writing to: {dir}"))
 
-  log_success("Completed: ", file.path(dir, "catchment_data.geojson"))
+  if(any(!file.exists(file.path(dir, "catchment_data.geojson")), overwrite)){
+    write_geojson(
+      read_sf(gpkg, catchment_name),
+      file.path(dir, "catchment_data.geojson")
+    )
+    hyaggregate_log("SUCCESS", glue("Completed: {file.path(dir, 'catchment_data.geojson')}"), verbose)
+  }
 
-  write_geojson(
-    read_sf(gpkg, "nexus"),
-    file.path(dir, "nexus_data.geojson")
-  )
+  if(any(!file.exists(file.path(dir, "nexus_data.geojson")), overwrite)){
+    write_geojson(
+      read_sf(gpkg, "nexus"),
+      file.path(dir, "nexus_data.geojson")
+    )
+    hyaggregate_log("SUCCESS", glue("Completed: {file.path(dir, 'nexus_data.geojson')}"), verbose)
+  }
 
-  log_success("Completed: ", file.path(dir, "nexus_data.geojson"))
+  if(any(!file.exists(file.path(dir, "flowpath_edge_list.json")), overwrite)){
 
-  write_json(
-    read_sf(gpkg, "flowpath_edge_list"),
-    file.path(dir, "flowpath_edge_list.json"),
-    pretty = TRUE
-  )
+    write_json(
+      read_sf(gpkg, "flowpath_edge_list"),
+      file.path(dir, "flowpath_edge_list.json"),
+      pretty = TRUE
+    )
 
-  log_success("Completed: ", file.path(dir, "flowpath_edge_list.json"))
+    hyaggregate_log("SUCCESS", glue("Completed: {file.path(dir, 'flowpath_edge_list.json')}"), verbose)
 
-  wb_feilds = tryCatch({
-    read_sf(gpkg, "flowpath_attributes") },
-    error = function(e) {
-      read_sf(gpkg, "flowpath_params")
-  })
+  }
 
-  wb_feilds2 <- split(select(wb_feilds, -id), seq(nrow(wb_feilds)))
 
-  names(wb_feilds2) = wb_feilds$id
+  if(any(!file.exists(file.path(dir, "flowpath_params.json")), overwrite)){
 
-  write_json(
-    wb_feilds2,
-    file.path(dir, "flowpath_params.json"),
-    pretty = TRUE
-  )
+    wb_feilds = tryCatch({
+      read_sf(gpkg, "flowpath_attributes") },
+      error = function(e) {
+        read_sf(gpkg, "flowpath_params")
+      })
 
-  log_success("Completed: ", file.path(dir, "flowpath_params.json"))
+    wb_feilds2 <- split(select(wb_feilds, -id), seq(nrow(wb_feilds)))
+
+    names(wb_feilds2) = wb_feilds$id
+
+    write_json(
+      wb_feilds2,
+      file.path(dir, "flowpath_params.json"),
+      pretty = TRUE
+    )
+
+    hyaggregate_log("SUCCESS", glue("Completed: {file.path(dir, 'flowpath_params.json')}"), verbose)
+  }
+
+
+  if(any(!file.exists(file.path(dir, "crosswalk-mapping.json")), overwrite)){
+
 
   network_order <-  get_vaa("hydroseq")
 
@@ -134,9 +153,11 @@ write_ngen_dir = function(gpkg,
                        pretty = TRUE,
                        auto_unbox = TRUE)
 
-  log_success("Completed: ", file.path(dir, "crosswalk-mapping.json"))
+  hyaggregate_log("SUCCESS", glue("Completed: {file.path(dir, 'crosswalk-mapping.json')}"), verbose)
 
   if(export_shapefiles){ write_shapefile_dir(gpkg, dir = dir) }
+
+  }
 
   return(dir)
 }
@@ -145,6 +166,7 @@ write_ngen_dir = function(gpkg,
 #' @title Write NextGen geopackage as directory of shapefiles
 #' @param gpkg path to geopackage
 #' @param dir directory path to create a 'shp' folder for output
+#' @param verbose should messages be emmited?
 #' @return NULL
 #' @export
 #' @importFrom logger log_info
@@ -152,14 +174,15 @@ write_ngen_dir = function(gpkg,
 
 #' @importFrom tidyr unnest_longer
 
-write_shapefile_dir = function(gpkg, dir){
+write_shapefile_dir = function(gpkg, dir, verbose = TRUE){
 
   outpath = file.path(dir, "shps")
   dir.create(outpath, recursive = TRUE, showWarnings = FALSE)
+
+  hyaggregate_log("INFO", glue("Writing shapefiles to: {outpath}"), verbose)
   log_info("Writing shapefiles to: {outpath}")
 
-
-  sf::gdal_utils(
+  gdal_utils(
     util = "vectortranslate",
     source = gpkg,
     destination = outpath, # output format must be specified for GDAL < 2.3

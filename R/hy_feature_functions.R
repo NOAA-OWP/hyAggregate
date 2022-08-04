@@ -11,6 +11,7 @@
 #' @return list
 #' @export
 
+
 apply_nexus_topology = function(network_list,
                                 nexus_prefix = "nex-",
                                 terminal_nexus_prefix = "tnex-",
@@ -19,41 +20,44 @@ apply_nexus_topology = function(network_list,
                                 term_cut = 1e9,
                                 verbose = TRUE){
 
-  hyaggregate_log("INFO", "\n\n--- Applying HY_feature topology --- \n\n", verbose)
+  hyaggregate_log("INFO", "\n--- Applying HY_feature topology ---\n", verbose)
 
-  network_list$flowpaths     <- assign_nex_ids(fline = network_list$flowpaths, term_cut = term_cut)
+  nl = list()
 
-  network_list$catchment_edge_list <- get_catchment_edges_terms(flowpaths = network_list$flowpaths,
-                                                                nexus_prefix = nexus_prefix,
-                                                                terminal_nexus_prefix = terminal_nexus_prefix ,
-                                                                catchment_prefix = catchment_prefix,
-                                                                term_cut = term_cut )
+  nl$flowpaths     <- assign_nex_ids(fline = network_list$flowpaths, term_cut = term_cut)
 
-  network_list$flowpath_edge_list  <-
-    get_catchment_edges_terms(network_list$flowpaths,
-                              catchment_prefix = waterbody_prefix)
+  nl$catchment_edge_list <- get_catchment_edges_terms(flowpaths = nl$flowpaths,
+                                                      nexus_prefix = nexus_prefix,
+                                                      terminal_nexus_prefix = terminal_nexus_prefix,
+                                                      catchment_prefix = catchment_prefix,
+                                                      term_cut = term_cut )
 
-  network_list$nex =  left_join(
-    get_nexus(fline = network_list$flowpaths,
-              term_cut = term_cut,
-              nexus_prefix = nexus_prefix,
-              terminal_nexus_prefix = terminal_nexus_prefix),
-    network_list$catchment_edge_list,
-    by = "id"
-  )
+  nl$flowpath_edge_list  <- get_catchment_edges_terms(nl$flowpaths,
+                                                      nexus_prefix = nexus_prefix,
+                                                      terminal_nexus_prefix = terminal_nexus_prefix,
+                                                      catchment_prefix = waterbody_prefix,
+                                                      term_cut = term_cut)
 
-  hyaggregate_log("INFO", "Created {nrow(network_list$nex)} nexus locations", verbose)
+  nex =  get_nexus(fline = nl$flowpaths,
+                   term_cut = term_cut,
+                   nexus_prefix = nexus_prefix,
+                   terminal_nexus_prefix = terminal_nexus_prefix)
 
-  network_list$catchments <- get_catchment_data(network_list$catchments,
-                                                network_list$catchment_edge_list,
-                                                catchment_prefix = catchment_prefix)
+  nl$nex =  left_join(nex,  nl$catchment_edge_list, by = "id")
 
-  network_list$flowpaths  <- get_flowpath_data( fline = network_list$flowpaths,
-                                                catchment_edge_list = network_list$catchment_edge_list,
-                                                waterbody_prefix = waterbody_prefix,
-                                                catchment_prefix = catchment_prefix)
+  hyaggregate_log("INFO", glue("Created {nrow(network_list$nex)} nexus locations"), verbose)
 
-  network_list
+  nl$catchments <- get_catchment_data(network_list$catchments,
+                                      nl$catchment_edge_list,
+                                      catchment_prefix = catchment_prefix)
+
+  nl$flowpaths  <- get_flowpath_data( fline = nl$flowpaths,
+                                      catchment_edge_list = nl$catchment_edge_list,
+                                      waterbody_prefix = waterbody_prefix,
+                                      catchment_prefix = catchment_prefix)
+
+  nl
+
 }
 
 
@@ -78,15 +82,12 @@ get_catchment_edges_terms = function(flowpaths,
 
   fline = select(st_drop_geometry(flowpaths), id, toid)
 
-  fline = flush_prefix(fline, "id")
-  fline = flush_prefix(fline, "toid")
+  fline = flush_prefix(fline, c("id", "toid"))
 
   obj1 = fline %>%
-    select(id = .data$id, toid = .data$toid) %>%
     mutate(id = paste0(catchment_prefix, .data$id),
            toid = paste0(
-             ifelse(.data$toid > term_cut, terminal_nexus_prefix, nexus_prefix),
-             .data$toid
+             ifelse(.data$toid > term_cut, terminal_nexus_prefix, nexus_prefix), .data$toid
            ))
 
   obj2 =  data.frame(id = unique(fline$toid)) %>%

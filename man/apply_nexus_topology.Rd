@@ -13,7 +13,8 @@ apply_nexus_topology(
   terminal_nexus_prefix = "tnex-",
   catchment_prefix = "cat-",
   waterbody_prefix = "wb-",
-  term_cut = 1e+09
+  term_cut = 1e+09,
+  verbose = TRUE
 )
 }
 \arguments{

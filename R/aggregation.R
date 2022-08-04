@@ -95,7 +95,7 @@ collapse_headwaters = function(network_list,
   hyaggregate_log("SUCCESS", glue("Collapsed {start - nrow(network_list$flowpaths)} features."), verbose)
 
   if (!is.null(cache_file)) {
-    write_hydrofabric_package(network_list, cache_file, "hw_agg_cat", "hw_agg_fp")
+    write_hydrofabric_package(network_list, cache_file, "hw_agg_cat", "hw_agg_fp", verbose)
   }
 
   return(network_list)
@@ -182,10 +182,10 @@ aggregate_network_to_distribution = function(gpkg = NULL,
                                              cache_file = NULL) {
 
   if(!is.logical(log)){
-    unlink(log)
     log_appender(appender_file(log))
     verbose = TRUE
   } else {
+    log_appender(appender_console)
     verbose = log
   }
 
@@ -194,10 +194,10 @@ aggregate_network_to_distribution = function(gpkg = NULL,
   hyaggregate_log("INFO", glue("min_area_sqkm --> {min_area_sqkm}"), verbose)
 
   if(!is.null(outfile)){
-    hyaggregate_log("INFO", glue("outfile --> {outfile}"), verbose)
+    hyaggregate_log("INFO", glue("outfile --> {outfile}\n"), verbose)
   }
 
-  hyaggregate_log("INFO", glue("\n\n--- Read in data from {gpkg} ---\n\n"), verbose)
+  hyaggregate_log("INFO", glue("\n--- Read in data from {gpkg} ---\n"), verbose)
 
   if (!is.null(gpkg)) {
 
@@ -223,16 +223,18 @@ aggregate_network_to_distribution = function(gpkg = NULL,
   }
 
   # Create a network list and check if DAG and connected
-  network_list <- prepare_network(network_list) %>%
-    drop_extra_features(verbose)
 
+  network_list$flowpaths  =   network_list$flowpaths[!duplicated(network_list$flowpaths), ]
+  network_list$catchments =   network_list$catchments[!duplicated(network_list$catchments), ]
+
+  network_list <- drop_extra_features(prepare_network(network_list), verbose)
 
   if (!is.null(cache_file)) {
-    write_hydrofabric_package(network_list, cache_file, "base_cat", "base_fp")
+    write_hydrofabric_package(network_list, cache_file, "base_cat", "base_fp", verbose)
   }
 
   # Perform first aggregation step!
-  hyaggregate_log("INFO", "\n\n---  Aggregate Along Mainstem ---\n\n", verbose)
+  hyaggregate_log("INFO", "\n---  Aggregate Along Mainstem ---\n", verbose)
 
   network_list = aggregate_along_mainstems(network_list,
                                            ideal_size_sqkm,
@@ -241,7 +243,7 @@ aggregate_network_to_distribution = function(gpkg = NULL,
                                            verbose = verbose,
                                            cache_file = cache_file)
 
-  hyaggregate_log("INFO", "\n\n--- Collapse Network Inward ---\n\n", verbose)
+  hyaggregate_log("INFO", "\n--- Collapse Network Inward ---\n", verbose)
 
   network_list  = collapse_headwaters(network_list,
                                       min_area_sqkm,
@@ -249,10 +251,11 @@ aggregate_network_to_distribution = function(gpkg = NULL,
                                       verbose = verbose,
                                       cache_file = cache_file)
 
-  if (nexus_topology) { network_list = apply_nexus_topology(network_list, verbose) }
+  if (nexus_topology) { network_list = apply_nexus_topology(network_list, verbose = verbose) }
+
 
   if (!is.null(routelink_path)) {
-    hyaggregate_log("INFO", glue("\n\n--- Creating Routing Table based on: {routelink_path} ---\n\n "), verbose)
+    hyaggregate_log("INFO", glue("\n--- Creating Routing Table based on: {routelink_path} ---\n "), verbose)
 
     network_list$waterbody_attributes <-
       length_average_routelink(flowpaths = network_list$flowpaths,
@@ -264,11 +267,11 @@ aggregate_network_to_distribution = function(gpkg = NULL,
     return(network_list)
   } else {
 
-    hyaggregate_log("INFO", glue("--- Writing data to: {outfile} ---\n\n"), verbose)
-
-    write_hydrofabric_package(network_list, outfile,
+    write_hydrofabric_package(network_list,
+                              outfile,
                               catchment_name  = "aggregate_divides",
-                              flowpath_name   ="aggregate_flowpaths")
+                              flowpath_name   ="aggregate_flowpaths",
+                              verbose)
 
     if (!is.null(network_list$nex)) { write_sf(network_list$nex, outfile, "nexus") }
 
@@ -342,7 +345,7 @@ aggregate_along_mainstems = function(network_list,
                   verbose)
 
   if (!is.null(cache_file)) {
-    write_hydrofabric_package(v, cache_file, "mainstem_agg_cat", "mainstem_agg_fp")
+    write_hydrofabric_package(v, cache_file, "mainstem_agg_cat", "mainstem_agg_fp", verbose)
   }
 
   return(v)

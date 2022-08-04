@@ -53,15 +53,26 @@ subset_network = function(gpkg,
                           catchment_name    = 'aggregate_divides',
                           mainstem = FALSE,
                           attribute_layers = NULL,
-                          export_gpkg = NULL) {
+                          export_gpkg = NULL,
+                          overwrite = FALSE,
+                          verbose = TRUE) {
 
-  trace = get_sorted(read_sf(gpkg, flowpath_edgelist),
-                     split = TRUE,
-                     outlets = origin)
+
+  if(!is.null(export_gpkg)){
+    if(file.exists(export_gpkg) & !overwrite){
+      return(export_gpkg)
+    }
+  }
+
+  tmp = read_sf(gpkg, flowpath_edgelist)
+  tmp2 = filter(tmp, id == origin)
+  trace = get_sorted(tmp,  outlets = tmp2$toid)
 
   ll = list()
 
-  ll[['flowpaths']] = filter(read_sf(gpkg,  flowpath_name),  id %in% trace$id)
+  ids = c(trace$id, trace$toid)
+
+  ll[['flowpaths']] = filter(read_sf(gpkg,  flowpath_name),  id %in% ids)
 
   ll[['divides']]   = filter(read_sf(gpkg,  catchment_name),
                      id %in% ll$flowpaths$realized_catchment)
@@ -79,9 +90,9 @@ subset_network = function(gpkg,
 
   if(!is.null(attribute_layers)){
     for(i in 1:length(attribute_layers)){
-      if(!layer_exists(gpkg, attribute_layers[i])){
+      if(layer_exists(gpkg, attribute_layers[i])){
         tmp = read_sf(gpkg, attribute_layers[i])
-        ll[[attribute_layers[i]]] = filter(tmp, id %in% divides$id )
+        ll[[attribute_layers[i]]] = filter(tmp, id %in% ll$divides$id )
       }
     }
   }
@@ -96,7 +107,7 @@ subset_network = function(gpkg,
       names = names(ll)
 
       for (i in 1:length(ll)) {
-        logger::log_info("Writing ", names[i])
+        hyaggregate_log("INFO", glue("Writing  {names[i]}"), verbose)
         write_sf(ll[[i]], export_gpkg, names[i])
       }
     }

@@ -53,7 +53,16 @@ aggregate_cfe_noahowp = function(gpkg = NULL,
                                  precision = 9,
                                  add_weights_to_gpkg = TRUE,
                                  add_to_gpkg = TRUE,
-                                 overwrite = FALSE) {
+                                 overwrite = FALSE,
+                                 log = TRUE) {
+
+  if(!is.logical(log)){
+    log_appender(appender_file(log))
+    verbose = TRUE
+  } else {
+    log_appender(appender_console)
+    verbose = log
+  }
 
   lyr = "cfe_noahowp_attributes"
 
@@ -71,17 +80,17 @@ aggregate_cfe_noahowp = function(gpkg = NULL,
 
   cats = read_sf(gpkg, catchment_name)
 
-  filter(cats, st_is_empty(cats))
+  # cats = filter(cats, st_is_empty(cats))
 
   if(is.null(dir)){
     stop("dir cannot be NULL")
   }
 
-  log_info("Getting NWM grid data")
+  hyaggregate_log("INFO", "Getting NWM grid data", verbose)
 
   data = get_nwm_grids(dir = dir, spatial = TRUE)
 
-  log_info("Building weighting grid from ", terra::sources(data)[1])
+  hyaggregate_log("INFO", glue("Building weighting grid from: {terra::sources(data)[1]}"),  verbose)
 
   nwm_w_1000m = weight_grid(data, cats,  ID = ID, progress = FALSE)
 
@@ -89,7 +98,6 @@ aggregate_cfe_noahowp = function(gpkg = NULL,
     write_sf(nwm_w_1000m, gpkg, "nwm1km_weights")
   }
 
-  log_success("Done!")
   soils_exe = list()
 
   ### soil_properties
@@ -97,7 +105,6 @@ aggregate_cfe_noahowp = function(gpkg = NULL,
   soil_gm_var   = c("dksat", "psisat")
   soil_mean_var = c("slope", "smcmax", "smcwlt", "refkdt", 'cwpvt', 'vcmx25', 'mp', 'mfsno')
 
-  log_info("Getting mode: ", paste(soil_mode_var, collapse = ", "))
   soils_exe[[1]] = zonal::execute_zonal(
     data = data,
     w = nwm_w_1000m,
@@ -107,8 +114,8 @@ aggregate_cfe_noahowp = function(gpkg = NULL,
     fun = "mode"
   )
 
-  log_success("Done!")
-  log_info("Getting geometric mean: ", paste(soil_gm_var, collapse = ", "))
+  hyaggregate_log("INFO", glue('Getting mode: {paste(soil_mode_var, collapse = ", ")}'),  verbose)
+
   soils_exe[[2]] = execute_zonal(
     data = data,
     w = nwm_w_1000m,
@@ -118,8 +125,8 @@ aggregate_cfe_noahowp = function(gpkg = NULL,
     fun = zonal:::geometric_mean
   )
 
-  log_success("Done!")
-  log_info("Getting mean: ", paste(soil_mean_var, collapse = ", "))
+  hyaggregate_log("INFO", glue('Getting geometric_mean: {paste(soil_gm_var, collapse = ", ")}'),  verbose)
+
   soils_exe[[3]] = execute_zonal(
     data = data,
     w = nwm_w_1000m,
@@ -129,14 +136,16 @@ aggregate_cfe_noahowp = function(gpkg = NULL,
     fun = "mean"
   )
 
-  log_success("Done!")
+  hyaggregate_log("INFO", glue('Getting mean: {paste(soil_mean_var, collapse = ", ")}'),  verbose)
 
   exe <- cbind(soils_exe[[1]], soils_exe[[2]], soils_exe[[3]])
+
   exe[[ID]] = cats[[ID]]
 
   ####
 
   if (!is.null(flowline_name)) {
+
     crosswalk <- st_drop_geometry(read_sf(gpkg, flowline_name))
 
     crosswalk = select(crosswalk, .data$id, .data$member_comid) %>%
@@ -146,10 +155,12 @@ aggregate_cfe_noahowp = function(gpkg = NULL,
       filter(!duplicated(.))
 
     gwnc = open.nc(get_nwm_grids(dir, spatial = FALSE))
+
     on.exit(close.nc(gwnc))
 
     vars      = c("Area_sqkm", "ComID", "Coeff",  "Zmax")
     vars_mode = c("Area_sqkm", "ComID", "Expon")
+
 
     gwparams_means = suppressMessages({
       lapply(vars, function(x)
@@ -169,6 +180,7 @@ aggregate_cfe_noahowp = function(gpkg = NULL,
         select(-.data$comid, -.data$Area_sqkm)
     })
 
+    hyaggregate_log("INFO", glue('Getting weighted mean: {paste(vars, collapse = ", ")}'),  verbose)
 
     getmode = function(x){
       ux <- unique(x)
@@ -188,8 +200,9 @@ aggregate_cfe_noahowp = function(gpkg = NULL,
         summarize(Expon = getmode(floor(.data$Expon)))
     })
 
+    hyaggregate_log("INFO", glue('Getting mode: {paste(vars_mode, collapse = ", ")}'),  verbose)
+
     traits = left_join(gwparams_means, gwparams_mode, by = ID) %>%
-      mutate(id = gsub("wb-", "cat-", .data$id)) %>%
       setNames(c('id', paste0('gw_', names(.)[-1]))) %>%
       right_join(exe, by = ID)
   }
@@ -202,6 +215,8 @@ aggregate_cfe_noahowp = function(gpkg = NULL,
   } else {
     return(traits)
   }
+
+  log_appender(appender_console)
 
 }
 

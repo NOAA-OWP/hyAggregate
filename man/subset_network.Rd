@@ -12,7 +12,9 @@ subset_network(
   catchment_name = "aggregate_divides",
   mainstem = FALSE,
   attribute_layers = NULL,
-  export_gpkg = NULL
+  export_gpkg = NULL,
+  overwrite = FALSE,
+  verbose = TRUE
 )
 }
 \arguments{

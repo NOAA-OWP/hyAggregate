@@ -13,7 +13,8 @@ aggregate_cfe_noahowp(
   precision = 9,
   add_weights_to_gpkg = TRUE,
   add_to_gpkg = TRUE,
-  overwrite = FALSE
+  overwrite = FALSE,
+  log = TRUE
 )
 }
 \arguments{

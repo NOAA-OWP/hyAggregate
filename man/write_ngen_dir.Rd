@@ -6,13 +6,18 @@
 \usage{
 write_ngen_dir(
   gpkg,
+  dir = NULL,
   catchment_name = "aggregate_divides",
   flowpath_name = "aggregate_flowpaths",
-  export_shapefiles = FALSE
+  export_shapefiles = FALSE,
+  verbose = TRUE,
+  overwrite = FALSE
 )
 }
 \arguments{
 \item{gpkg}{path to geopackage}
+
+\item{dir}{directory to write data to, if NULL, then its written at the same level as the gpkg}
 
 \item{catchment_name}{name of catchment layer}
 

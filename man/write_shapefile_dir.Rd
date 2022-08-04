@@ -4,12 +4,14 @@
 \alias{write_shapefile_dir}
 \title{Write NextGen geopackage as directory of shapefiles}
 \usage{
-write_shapefile_dir(gpkg, dir)
+write_shapefile_dir(gpkg, dir, verbose = TRUE)
 }
 \arguments{
 \item{gpkg}{path to geopackage}
 
 \item{dir}{directory path to create a 'shp' folder for output}
+
+\item{verbose}{should messages be emmited?}
 }
 \description{
 Write NextGen geopackage as directory of shapefiles
