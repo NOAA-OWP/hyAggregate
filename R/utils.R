@@ -19,13 +19,23 @@ generate_lookup_table = function(gpkg = NULL,
 
   lu = read_sf(gpkg, flowpath_name) |>
     st_drop_geometry() |>
-    select(aggregated_flowpath_ID = id, member_COMID = member_comid, aggregated_divide_ID = realized_catchment) |>
+    select(aggregated_flowpath_ID = id,
+           toid = toid,
+           member_COMID = member_comid,
+           aggregated_divide_ID = realized_catchment,
+           ) |>
     mutate(member_COMID = strsplit(member_COMID, ",")) |>
     unnest(col = 'member_COMID') |>
-    full_join(read_sf(refactored_fabric, "lookup_table"), by = "member_COMID")
+    full_join(read_sf(refactored_fabric, "lookup_table"),
+              by = "member_COMID") |>
+    left_join(
+            select(read_sf(gpkg, "nexus"),
+                   toid = id,
+                   outlet_type = type),
+            by = "toid") |>
+    select(-toid)
 
   write_sf(lu, gpkg, "lookup_table")
-
 
   return(lu)
 }
@@ -64,6 +74,10 @@ hyaggregate_log = function(level, message, emit = TRUE){ if(emit){ log_level(lev
 
 drop_extra_features = function(network_list, verbose){
 
+  network_list$flowpaths  =   network_list$flowpaths[!duplicated(network_list$flowpaths), ]
+  network_list$catchments =   network_list$catchments[!duplicated(network_list$catchments), ]
+
+
   cond = describe_hydrofabric(network_list, verbose)
 
   if(!cond){
@@ -95,13 +109,27 @@ drop_extra_features = function(network_list, verbose){
 #' @param catchment_name name of catchment layer
 #' @param flowpath_name name of flowpath layer
 #' @param crs desired CRS, if NULL they stay as read
+#' @param vebose should message be emitted?
 #' @return list
 #' @export
 
 read_hydrofabric_package = function(gpkg,
-                                    catchment_name,
-                                    flowpath_name,
-                                    crs = NULL){
+                                    catchment_name = NULL,
+                                    flowpath_name = NULL,
+                                    crs = NULL,
+                                    verbose = TRUE){
+
+  hyaggregate_log("INFO", glue("\n--- Read in data from {gpkg} ---\n"), verbose)
+
+  if(is.null(flowpath_name)){
+    flowpath_name = grep("flowpath", st_layers(gpkg)$name, value = TRUE)
+    hyaggregate_log("INFO", glue("Reading flowpaths from: {flowpath_name}"), verbose)
+  }
+
+  if(is.null(catchment_name)){
+    catchment_name = grep("divide", st_layers(gpkg)$name, value = TRUE)
+    hyaggregate_log("INFO", glue("Reading flowpaths from: {catchment_name}"), verbose)
+  }
 
   out = list()
 
@@ -685,6 +713,8 @@ layer_exists = function(gpkg, name){
 nexus_from_poi = function(gpkg,
                           type = c('HUC12', 'Gages', 'TE', 'NID', 'WBIn', 'WBOut'),
                           verbose = TRUE){
+
+  # Will either be inferred - or - reference... use "unique" ID (comid facepalm).
 
   valid_types = c('HUC12', 'Gages', 'TE', 'NID', 'WBIn', 'WBOut', "Conf", "Term", "Elev", "Travel", "Con")
 
